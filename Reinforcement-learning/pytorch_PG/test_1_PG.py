@@ -61,7 +61,7 @@ RL.set_Optimizer(optimizer=torch.optim.Adam(RL.policy_net.parameters(),lr=0.01))
 for episode in range(1000):
     #view
     game.reset();
-    now_state = torch.tensor([game.env.state],dtype=torch.float32); # we define that now_state is different screen before action.
+    now_state = torch.tensor([game.env.state],dtype=torch.float32);
     for t  in range(1000):
 
         # Decide action from policy network and !!!stack policy ouput to memory!!!

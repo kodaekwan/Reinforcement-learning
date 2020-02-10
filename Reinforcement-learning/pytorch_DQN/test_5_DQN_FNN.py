@@ -74,7 +74,7 @@ for episode in range(1000):
     #view
     game.reset();
     observation = game.env.state;
-    now_state = torch.tensor([observation],dtype=torch.float32); # we define that now_state is different screen before action.
+    now_state = torch.tensor([observation],dtype=torch.float32);
     score = 0
 
     for t  in range(1000):
