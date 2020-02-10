@@ -18,6 +18,8 @@ sys.path.append("..")
 import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
 
 
+
+
 class Model(torch.nn.Module):
     def __init__(self,input_size=4,output_size=2):
         super(Model,self).__init__();
@@ -58,7 +60,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 policy_net=Model(input_size=4,output_size=2);
 target_net=Model(input_size=4,output_size=2);
 
-RL=DK_ReinforcementLearning.DQN_Module(policy_net=policy_net,
+RL=DK_ReinforcementLearning.DDQN_Module(policy_net=policy_net,
                             target_net=target_net,
                             device=device,
                             batch_size=64,
@@ -86,7 +88,7 @@ for episode in range(1000):
         observation,reward,done,info = game.set_control(action.item());
         # observation shape => [cart-position ,cart-velocity, pole-position, pole-velocity]
 
-        reward = reward if not done or score >= 499.0 else -100.0
+        reward = reward if not done or score >= 499 else -100.0
         score += reward
 
         # !!view current image but not using to train!!

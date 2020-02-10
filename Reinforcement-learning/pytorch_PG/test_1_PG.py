@@ -2,7 +2,11 @@ import gym
 import time
 import numpy as np
 import torch
-import DK_ReinforcementLearning
+import sys
+sys.path.append("..")
+import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
+
+
 torch.manual_seed(1);
 
 class Model(torch.nn.Module):

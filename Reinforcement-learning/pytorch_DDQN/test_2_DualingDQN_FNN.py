@@ -18,6 +18,8 @@ sys.path.append("..")
 import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
 
 
+
+
 class Model(torch.nn.Module):
     def __init__(self,input_size=4,output_size=2):
         super(Model,self).__init__();
@@ -31,9 +33,10 @@ class Model(torch.nn.Module):
         torch.nn.init.uniform_(self.linear2.weight);
         self.norm2 = torch.nn.BatchNorm1d(24);
         self.ac2  = torch.nn.ReLU();
-    
-        self.head = torch.nn.Linear(24,output_size);
-        torch.nn.init.uniform_(self.head.weight);
+        # =============== Dualing DQN=======================
+        self.Advantage = torch.nn.Linear(12,output_size);
+        self.Value = torch.nn.Linear(12,1);
+        # =============== Dualing DQN=======================
 
     def forward(self,x):
         x=self.linear1(x);
@@ -44,7 +47,14 @@ class Model(torch.nn.Module):
         x=self.norm2(x);
         x=self.ac2(x);
 
-        return self.head(x.view(x.size(0),-1));#(batch,2)
+        # =============== Dualing DQN=======================
+        x1,x2=torch.split(x,12,dim=1);
+        x1=self.Value(x1);
+        x2=self.Advantage(x2);
+
+        output=x1+torch.sub(x2,x2.mean(dim=1,keepdim=True));
+        # =============== Dualing DQN=======================
+        return output;
 
 
 game=DK_ReinforcementLearning.GAME();
@@ -86,7 +96,7 @@ for episode in range(1000):
         observation,reward,done,info = game.set_control(action.item());
         # observation shape => [cart-position ,cart-velocity, pole-position, pole-velocity]
 
-        reward = reward if not done or score >= 499.0 else -100.0
+        reward = reward if not done or score >= 499 else -100.0
         score += reward
 
         # !!view current image but not using to train!!

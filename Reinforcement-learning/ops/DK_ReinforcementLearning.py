@@ -228,10 +228,10 @@ class DQN_Module():
         next_state_values = torch.zeros(self.batch_size,device=self.device);
         next_state_values[non_final_mask]  = self.target_net(non_final_next_state).max(1)[0].detach();# target_net decide next state. In order to separated update, you detach the result.
         
-        expected_state_action_values = (next_state_values*GAMMA) + reward_batch;
-
+        expected_state_action_values = reward_batch+(GAMMA*next_state_values);
+        
         loss = self.criterion(state_action_values,expected_state_action_values.unsqueeze(1));
-        #loss = F.mse_loss(state_action_values,expected_state_action_values.unsqueeze(1));
+        # loss = reward + gamma*Qt(s',a') - Qp(s,a);
         
         self.optimizer.zero_grad();
         loss.backward();
@@ -244,6 +244,134 @@ class DQN_Module():
         self.policy_net.eval();# 
 
 
+class DDQN_Module():
+    # Double Deep Q Networks
+    def __init__(self,policy_net,target_net,device=None,batch_size=128,train_start=0):
+        if(device==None):
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
+        else:
+            self.device=device;
+        
+        self.batch_size = batch_size;
+        self.train_start =train_start;
+        self.policy_net=policy_net.to(self.device);
+        self.target_net=target_net.to(self.device);
+        self.target_update();#first, copied weight of policy_net to target net.
+        self.target_net.eval();# 
+        self.policy_net.eval();# 
+        self.target_updata_count = 0;
+
+    def set_Criterion(self,criterion=None):    
+        if(criterion==None):
+            self.criterion = torch.nn.SmoothL1Loss().to(self.device);
+        else:
+            self.criterion = criterion.to(self.device);
+    
+    def set_Optimizer(self,optimizer=None):
+        
+        if(optimizer==None):
+            self.optimizer = torch.optim.RMSprop(self.policy_net.parameters());
+        else:
+            self.optimizer = optimizer;
+
+    def set_Threshold(self,EPS_START=0.9,EPS_END=0.05,EPS_DECAY=200):
+        self.Threshold = Episode_Threshold(EPS_START=EPS_START,EPS_END=EPS_END,EPS_DECAY=EPS_DECAY);
+    
+    def set_Memory(self,capacity=5000,buffer_device=None):
+        self.memory = ReplayMemory(capacity);
+        
+        if(buffer_device==None):
+            self.buffer_device=self.device;
+        else:
+            self.buffer_device=buffer_device;
+    
+    def get_policy_action(self,state,action_num=2):
+        # state is network 1 batch input data
+        sample = random.random();
+        threshold=self.Threshold.get_threshold();
+        if (sample > threshold):
+            with torch.no_grad():# don't update 
+                output  = self.policy_net(state.to(self.device));
+                # max(1) mean data get maximun value based 1 dimension tensor.
+                # .max(1) same method => np.argmax(output,axis=1)
+                # if a=[[1,2],[3,4],[5,6]], np.argmax(a,axis=1)  = [ 2 , 4 , 6 ];
+                index_output=output.max(1)[1];
+                # max_value,max_value_index=output.max(1);
+                # output.max(1) return tensor[ max value, index of max value]; => example a=tensor[[1,2],[3,4],[6,1]], a.max(1) = tensor[[ 2 , 4 , 6 ], [ 1 , 1 , 0 ]]
+                # output.max(1)[1] is index => example a=tensor[[1,2],[3,4],[6,1]], a.max(1) = [[ 2 , 4 , 6 ], [ 1 , 1 , 0 ] ], a.max(1)[1] = [1,1,0]
+                return index_output.view(1,1);
+        else:
+            return torch.tensor([[random.randrange(action_num)]],device=self.device,dtype=torch.long);
+    
+    def stack_memory(self,state=None,action=None,next_state=None,reward=None):
+        self.memory.push(   state.to(self.buffer_device),
+                            action.to(self.buffer_device),
+                            next_state if next_state==None else next_state.to(self.buffer_device),
+                            reward.to(self.buffer_device));
+                            
+    def target_update(self):
+        self.target_net.load_state_dict(self.policy_net.state_dict());#copied weight of policy_net to target net.
+
+    def update(self,GAMMA=0.999,parameter_clamp=None):
+        # "parameter_clamp" example) parameter_clamp=(-1,1)
+
+        # if memory size under BATCH_SIZE then  the results continuous stack to memory.
+        if len(self.memory)<(self.batch_size+self.train_start):
+            return;
+        #print("train");
+        self.policy_net.train();# 
+        # if memory size over self.batch_size then train network model.
+        
+        # get batch data
+        transition = self.memory.sample(self.batch_size);
+        batch_data = Transition(*zip(*transition));
+        # last data dropout
+        non_final_mask = torch.tensor(  tuple(map(lambda s: s is not None, batch_data.next_state))
+                                        ,device=self.device
+                                        ,dtype=torch.bool);
+        non_final_next_state = torch.cat([s for s in batch_data.next_state if s is not None]).to(self.device);
+
+        state_batch = torch.cat(batch_data.state).to(self.device);
+        action_batch = torch.cat(batch_data.action).to(self.device);
+        reward_batch = torch.cat(batch_data.reward).to(self.device);
+
+        state_action_values = self.policy_net(state_batch).gather(1,action_batch);
+        # gather() parsing the result according to action_batch.
+        # example) a=[[1,2],[3,4],[5,6]],b=[1,0,1] => a.gather(1,b) = [2,3,6]
+
+
+        # ========================== Double DQN ======================================
+        # reference http://papers.nips.cc/paper/3964-double-q-learning
+        
+        # ****  a' of origin DQN is result of past Qp ****
+        # Origin DQN:  loss = reward + gamma*Qt(s',a') - Qp(s,a);
+        
+        # **** a' of Double DQN is result of current Qp ****
+        # Double DQN:  loss = reward + gamma*Qt(s', Qp(s',a') ) - Qp(s,a); 
+        
+        next_state_action_values = self.policy_net(non_final_next_state).max(1)[1].detach();
+        #                   ^ a' = Qp(s',a')
+
+        next_state_values = torch.zeros(self.batch_size,device=self.device);
+        next_state_values[non_final_mask]  = self.target_net(non_final_next_state).gather(1,next_state_action_values.unsqueeze(1)).detach().squeeze();
+        #                                              ^ Qt(s', Qp(s',a') )
+        
+        expected_state_action_values = reward_batch+(GAMMA*next_state_values);
+        # ========================== Double DQN ======================================
+        
+        loss = self.criterion(state_action_values,expected_state_action_values.unsqueeze(1));
+        
+        
+        
+        self.optimizer.zero_grad();
+        loss.backward();
+
+        if(parameter_clamp!=None):
+            for param in self.policy_net.parameters():
+                param.grad.data.clamp_(parameter_clamp[0],parameter_clamp[1]);
+
+        self.optimizer.step();
+        self.policy_net.eval();# 
 
 
 class GAME():

@@ -12,7 +12,9 @@ from PIL import Image
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as T
-import DK_ReinforcementLearning
+import sys
+sys.path.append("..")
+import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
 
 
 class Model(torch.nn.Module):
