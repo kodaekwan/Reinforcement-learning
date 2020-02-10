@@ -54,7 +54,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 policy_net=Model(input_size=4,output_size=2);
 target_net=Model(input_size=4,output_size=2);
 
-RL=DK_ReinforcementLearning.DQN_Module(policy_net=policy_net,
+RL=DK_ReinforcementLearning.DDQN_Module(policy_net=policy_net,
                             target_net=target_net,
                             device=device,
                             batch_size=64,
@@ -108,7 +108,7 @@ for episode in range(1000):
             break;
         
         # update policy model
-        RL.update(GAMMA=0.99,parameter_clamp=(-1,1));
+        RL.update(GAMMA=0.99);
 
     # target model synchronization with policy model.
     if episode%10==0:

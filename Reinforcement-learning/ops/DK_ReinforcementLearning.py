@@ -356,11 +356,12 @@ class DDQN_Module():
         # **** a' of Double DQN is result of current Qp ****
         # Double DQN:  loss = reward + gamma*Qt(s', Qp(s',a') ) - Qp(s,a); 
         
-        next_state_action_values = self.policy_net(non_final_next_state).max(1)[1].detach();
+        with torch.no_grad():
+            next_state_action_values = self.policy_net(non_final_next_state).max(1)[1].detach();
         #                   ^ a' = Qp(s',a')
 
         next_state_values = torch.zeros(self.batch_size,device=self.device);
-        next_state_values[non_final_mask]  = self.target_net(non_final_next_state).gather(1,next_state_action_values.unsqueeze(1)).detach().squeeze();
+        next_state_values[non_final_mask]  = self.target_net(non_final_next_state).gather(1,next_state_action_values.unsqueeze(1)).detach().squeeze(1);
         #                                              ^ Qt(s', Qp(s',a') )
         
         expected_state_action_values = reward_batch+(GAMMA*next_state_values);

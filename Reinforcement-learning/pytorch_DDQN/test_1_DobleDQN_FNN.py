@@ -102,7 +102,7 @@ for episode in range(1000):
             break;
         
         # update policy model
-        RL.update(GAMMA=0.99,parameter_clamp=(-1,1));
+        RL.update(GAMMA=0.99);
 
     # target model synchronization with policy model.
     if episode%10==0:
