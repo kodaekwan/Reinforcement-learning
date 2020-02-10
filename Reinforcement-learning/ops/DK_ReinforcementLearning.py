@@ -5,7 +5,7 @@ import numpy as np
 import math
 from collections import namedtuple
 from torch.distributions import Categorical
-import cv2
+
 
 class Episode_Threshold():#random Threshold
     def __init__(self,EPS_START = 0.9,EPS_END = 0.05,EPS_DECAY = 200):
@@ -375,6 +375,7 @@ class DDQN_Module():
 
 
 class GAME():
+    import cv2
     def __init__(self,game_name='CartPole-v0'):
         import gym #$ pip3 install gym
         self.env = gym.make(game_name);# make game
@@ -436,4 +437,4 @@ class GAME():
         return src[h_slice_range,w_slice_range,:];
     
     def resize_image(self,src,width,height):
-        return cv2.resize(src, dsize=(width, height), interpolation=cv2.INTER_CUBIC);
+        return self.cv2.resize(src, dsize=(width, height), interpolation=self.cv2.INTER_CUBIC);
