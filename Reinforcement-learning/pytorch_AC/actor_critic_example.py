@@ -1,4 +1,3 @@
-# REFRENCE: https://github.com/pytorch/examples/blob/master/reinforcement_learning/actor_critic.py
 import gym
 import numpy as np
 from itertools import count
@@ -24,3 +23,7 @@ class Policy(torch.nn.Module):
 
         # actor's layer
         self.action_head = torch.nn.Linear(128,2);
+
+
+
+# REFRENCE: https://github.com/pytorch/examples/blob/master/reinforcement_learning/actor_critic.py
