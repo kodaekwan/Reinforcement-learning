@@ -41,7 +41,7 @@ class ReplayMemory(object):
         return len(self.memory);
 
 class PG_Module():
-    #Policy_Gradient
+    # Monte-Carlo Policy_Gradient
     def __init__(self,policy_net,device=None):
         if(device==None):
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
@@ -71,7 +71,7 @@ class PG_Module():
         # stack prob by model
         if len(self.policy_history) > 0:
             self.policy_history = torch.cat([self.policy_history, c.log_prob(action).reshape(1)])
-            # .log_prob(index_list) return ln(probability value) accoding to "c.sample()=[1,1,0]" => 
+            # .log_prob(index_list) return ln(probability value) accoding to index"c.sample()=[1,1,0]"
             # example) c = [[1,2,0],[3,4,0],[6,5,0],[7,8,9]], c.sample() = [1,1,0,2], c.log_prob(c.sample()) = [2,4,6,9]
         else:
             self.policy_history = (c.log_prob(action)).reshape(1);
@@ -97,7 +97,7 @@ class PG_Module():
         R = 0;
         rewards_trajectory = []
 
-        # accumulate reward  => reward_history[1.0,1.0,1.0] => rewards_trajectory[1.0, 1.99, 2.98]
+        # accumulate reward  => reward_history[1.0,1.0,1.0] => rewards_trajectory[2.98, 1.99, 1.0]
         for r in self.reward_history[::-1]:
             R = r + (GAMMA * R);
             rewards_trajectory.insert(0,R);
@@ -107,11 +107,17 @@ class PG_Module():
         rewards_trajectory = (rewards_trajectory-rewards_trajectory.mean())/(rewards_trajectory.std() + np.finfo(np.float32).eps);
         
         # Calculate loss
-        # "policy_history" is action trajectory of model.
-        # "rewards_trajectory" is result according to action of model.
+        # Monte-Carlo Policy Gradient
+        # Loss = − ∑Qp(s,a)logπ(a|s)
+        # Qp        : policy network
+        # ∑Qp(s,a)  : Accumulated total reward ->rewards_trajectory
+        # logπ(a|s) : log-probability of the action taken ->policy_history
+
         pi_r = torch.mul(self.policy_history.to(self.device),torch.autograd.Variable(rewards_trajectory).to(self.device));
+        # policy Gradient objective is pi_r maximize.
         loss = -torch.sum(pi_r,dim=-1);
-        
+        # this score function had high variance problem because logπ(a|s).=> local minima 
+
         # update model weight
         self.optimizer.zero_grad();
         loss.backward();
