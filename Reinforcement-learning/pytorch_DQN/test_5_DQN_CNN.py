@@ -1,20 +1,11 @@
-import gym
 import time
-
 import numpy as np
-import math
-import matplotlib
-import matplotlib.pyplot as plt
-from collections import namedtuple
-from itertools import count
-from PIL import Image
-
 import torch
-import torch.nn.functional as F
-import torchvision.transforms as T
 import sys
 sys.path.append("..")
 import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
+import torch.nn.functional as F
+
 
 
 class Model(torch.nn.Module):
@@ -160,5 +151,4 @@ for episode in range(1000):
 #======================== reinforce learning ================================
 
 game.close();
-plt.close();
 
