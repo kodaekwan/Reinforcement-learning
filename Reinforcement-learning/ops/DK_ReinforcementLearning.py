@@ -116,7 +116,7 @@ class PG_Module():
         pi_r = torch.mul(self.policy_history.to(self.device),torch.autograd.Variable(rewards_trajectory).to(self.device));
         # policy Gradient objective is pi_r maximize.
         loss = -torch.sum(pi_r,dim=-1);
-        # this score function had high variance problem because logπ(a|s).=> local minima 
+        # this score function had high variance problem because logπ(a|s).
 
         # update model weight
         self.optimizer.zero_grad();
