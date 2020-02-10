@@ -130,8 +130,8 @@ class PG_Module():
         return avg_loss,total_reward;
 
 
-class DQL_Module():
-    # Deep Q learning
+class DQN_Module():
+    # Deep Q Networks
     def __init__(self,policy_net,target_net,device=None,batch_size=128,train_start=0):
         if(device==None):
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
