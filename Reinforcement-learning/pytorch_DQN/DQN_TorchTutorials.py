@@ -268,13 +268,3 @@ env.close();
 plt.ioff();
 plt.show();
 
-# u_st=int(round(time.time() * 1000000));
-
-# torch.ones(10,30,30);
-
-
-# u_et=int(round(time.time() * 1000000));
-# print((u_et-u_st),"us");
-
-# env.env.close()
-# plt.close();
