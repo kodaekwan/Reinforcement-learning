@@ -7,7 +7,6 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
- 
 
 env = gym.make('CartPole-v0')
 env.seed(543)

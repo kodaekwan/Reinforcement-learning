@@ -55,12 +55,13 @@ class PG_Module():
         # initial policy and reward history
         self.policy_history = torch.autograd.Variable(torch.Tensor());
         self.reward_history = [];
+        self.softmax = torch.nn.Softmax();
 
         
     def get_policy_action(self,state,action_num=2):
         # state is network 1 batch input data
         
-        output = self.policy_net(torch.autograd.Variable(state).to(self.device));
+        output = self.softmax(self.policy_net(torch.autograd.Variable(state).to(self.device)));
         c = Categorical(output);# stack output data 
         # example) output = [[1,2],[3,4],[6,5]] ,c = Categorical(output), c = [[1,2],[3,4],[6,5]]
 

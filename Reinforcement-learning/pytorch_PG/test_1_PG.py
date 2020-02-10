@@ -12,31 +12,25 @@ class Model(torch.nn.Module):
         super(Model,self).__init__();
         
         self.linear1 = torch.nn.Linear(input_size,64,bias=False);
-        #self.norm1 = torch.nn.BatchNorm1d(64);
         self.ac1  = torch.nn.ReLU();
         self.dropout1 = torch.nn.Dropout(0.1);
     
         self.linear2 = torch.nn.Linear(64,64,bias=False);
-        #self.norm2 = torch.nn.BatchNorm1d(64);
         self.ac2  = torch.nn.ReLU();
         self.dropout2 = torch.nn.Dropout(0.1);
     
         self.head = torch.nn.Linear(64,output_size,bias=False);
-        self.ac3 = torch.nn.Softmax();
 
     def forward(self,x):
-        # if input_size=4, output_size = 2
         x=self.linear1(x);
-        #x=self.norm1(x);
         x=self.dropout1(x);
         x=self.ac1(x);
         
         x=self.linear2(x);        
-        #x=self.norm2(x);
         x=self.dropout2(x);
         x=self.ac2(x);
         
-        return self.ac3(self.head(x));#(batch,2)
+        return self.head(x);
 
 
 game=DK_ReinforcementLearning.GAME();
