@@ -5,9 +5,6 @@ import sys
 sys.path.append("..")
 import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
 
-
-
-
 class Model(torch.nn.Module):
     def __init__(self,input_size=4,output_size=2):
         super(Model,self).__init__();
