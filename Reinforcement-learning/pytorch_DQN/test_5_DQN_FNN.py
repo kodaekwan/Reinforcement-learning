@@ -53,7 +53,7 @@ RL=DK_ReinforcementLearning.DQN_Module(policy_net=policy_net,
 
 RL.set_Criterion(criterion=torch.nn.MSELoss())
 RL.set_Optimizer(optimizer=torch.optim.Adam(RL.policy_net.parameters(),lr=0.001,weight_decay=0.01));
-RL.set_Threshold(EPS_START=1.0,EPS_END=0.01,EPS_DECAY=1000);
+RL.set_Threshold(EPS_START=1.0,EPS_END=0.01,EPS_DECAY=400);
 RL.set_Memory(capacity=2000,buffer_device=torch.device("cpu"));
 
 
@@ -61,7 +61,7 @@ for episode in range(1000):
     #view
     game.reset();
     observation = game.env.state;
-    now_state = torch.tensor([observation],dtype=torch.float32);
+    now_state = observation;
     score = 0
 
     for t  in range(1000):
@@ -70,7 +70,7 @@ for episode in range(1000):
         action=RL.get_policy_action(state=now_state,action_num=2);
 
         # Execute action in Game environment by network policy
-        observation,reward,done,info = game.set_control(action.item());
+        observation,reward,done,info = game.set_control(action);
         # observation shape => [cart-position ,cart-velocity, pole-position, pole-velocity]
 
         reward = reward if not done or score >= 499.0 else -100.0
@@ -81,12 +81,12 @@ for episode in range(1000):
             now_screen = game.get_screen();
 
         if not done:
-            next_state = torch.tensor([observation],dtype=torch.float32);
+            next_state = observation;
         else:
             next_state = None;
 
         # stack results to memory
-        RL.stack_memory(now_state,action,next_state,torch.tensor([reward]));
+        RL.stack_memory(now_state,action,next_state,reward);
         
         # change from now data to previous data by time flow.
         now_state = next_state;

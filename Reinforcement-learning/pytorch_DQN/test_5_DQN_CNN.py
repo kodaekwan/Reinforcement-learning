@@ -89,12 +89,9 @@ for episode in range(1000):
     different_screen = now_screen-privous_screen;#calculate different screen
 
     # the different_screen-image normalization and transform from HWC to CHW 
-    float_dsc=np.array([different_screen],dtype=np.float32)/255;# RGB image(0~255) -> RGB image(0.0~1.0)
-    float_dsc=float_dsc.transpose((0,3,1,2));# (Batch, Height, Width, Channel)->(Batch, Channel, Height, Width)
+    float_dsc=np.array(different_screen,dtype=np.float32)/255.0;# RGB image(0~255) -> RGB image(0.0~1.0)
+    now_state=float_dsc.transpose((2,0,1));# (Height, Width, Channel)->(Channel, Height, Width)
     
-    # we define that now_state is different screen before action.
-    now_state = torch.from_numpy(float_dsc); 
-
     score = 0
     for t  in range(1000):
 
@@ -102,7 +99,7 @@ for episode in range(1000):
         action=RL.get_policy_action(state=now_state,action_num=2);
 
         # Execute action in Game environment by network policy
-        observation,reward,done,info = game.set_control(action.item());
+        observation,reward,done,info = game.set_control(action);
         
         #!!get current image after action from Game environment!!
         reward = reward if not done or score >= 499.0 else -100.0
@@ -117,18 +114,17 @@ for episode in range(1000):
         # image transform
         now_screen=game.focus_cut_image(src=now_screen,focus=image_focus,width=image_cut_width,height=image_cut_height);
         now_screen=game.resize_image(now_screen,90,40);# get now state for image
+        
         different_screen = now_screen-privous_screen;#calculate different screen
-        float_dsc=np.array([different_screen],dtype=np.float32)/255;# RGB image(0~255) -> RGB image(0.0~1.0)
-        float_dsc=float_dsc.transpose((0,3,1,2));# (Batch, Height, Width, Channel)->(Batch, Channel, Height, Width)
-
+        float_dsc=np.array(different_screen,dtype=np.float32)/255.0;# RGB image(0~255) -> RGB image(0.0~1.0)
 
         if not done:
-            next_state = torch.from_numpy(float_dsc);
+            next_state = float_dsc.transpose((2,0,1));# (Height, Width, Channel)->(Channel, Height, Width)
         else:
             next_state = None;
 
         # stack results to memory
-        RL.stack_memory(now_state,action,next_state,torch.tensor([reward]));
+        RL.stack_memory(now_state,action,next_state,reward);
         
         # change from now data to previous data by time flow.
         now_state = next_state;

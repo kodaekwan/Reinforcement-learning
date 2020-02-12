@@ -139,17 +139,24 @@ class AC_Mono_PG_Module():
         returns = torch.tensor(returns);
         returns = (returns-returns.mean()) / (returns.std()-self.eps);
         
-        for (log_prob,value), R_ in zip(self.history, returns):
-            advantage = R_ - value.squeeze(0).item();
+        # Advantage Actor-Critic
+        # A(s,a)=Q(s,a)−V(s)
+        
+        for (log_prob,value), returns_ in zip(self.history, returns):
+            
+            value=value.squeeze(0);
+            returns_ = torch.tensor(returns_).to(self.device);
+
+            advantage = returns_ - value.detach();# In order to Stable calculate, it need to value.detach()
+
             # calculate loss
             policy_losses.append(-log_prob*advantage);
-
-            accumulated_reward = torch.tensor([R_]).to(self.device);
-            value_losses.append(self.criterion(value,accumulated_reward));
+            
+            # calculate loss
+            value_losses.append(self.criterion(value,returns_));
         
         
         self.optimizer.zero_grad();
-
         loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum();
         loss.backward();
         self.optimizer.step();
@@ -242,8 +249,8 @@ class PG_Module():
         policy_losses = [];
         
         # policy Gradient objective is pi_r maximize.
-        for (log_prob,_), advantage in zip(self.history, returns):
-            pi_r = log_prob*advantage;
+        for (log_prob,_),returns_ in zip(self.history, returns):
+            pi_r = log_prob*returns_;
             policy_losses.append(-pi_r);
 
         loss = torch.stack(policy_losses).sum();
@@ -308,11 +315,14 @@ class DQN_Module():
     
     def get_policy_action(self,state,action_num=2):
         # state is network 1 batch input data
+        state = torch.from_numpy(state).float().to(self.device).unsqueeze(0);
+
         sample = random.random();
         threshold=self.Threshold.get_threshold();
+
         if (sample > threshold):
             with torch.no_grad():# don't update 
-                output  = self.policy_net(state.to(self.device));
+                output  = self.policy_net(state);
                 # max(1) mean data get maximun value based 1 dimension tensor.
                 # .max(1) same method => np.argmax(output,axis=1)
                 # if a=[[1,2],[3,4],[5,6]], np.argmax(a,axis=1)  = [ 2 , 4 , 6 ];
@@ -320,16 +330,20 @@ class DQN_Module():
                 # max_value,max_value_index=output.max(1);
                 # output.max(1) return tensor[ max value, index of max value]; => example a=tensor[[1,2],[3,4],[6,1]], a.max(1) = tensor[[ 2 , 4 , 6 ], [ 1 , 1 , 0 ]]
                 # output.max(1)[1] is index => example a=tensor[[1,2],[3,4],[6,1]], a.max(1) = [[ 2 , 4 , 6 ], [ 1 , 1 , 0 ] ], a.max(1)[1] = [1,1,0]
-                return index_output.view(1,1);
+                return index_output.item();
         else:
-            return torch.tensor([[random.randrange(action_num)]],device=self.device,dtype=torch.long);
+            return random.randrange(action_num);
     
     def stack_memory(self,state=None,action=None,next_state=None,reward=None):
-        self.memory.push(   state.to(self.buffer_device),
-                            action.to(self.buffer_device),
-                            next_state if next_state==None else next_state.to(self.buffer_device),
-                            reward.to(self.buffer_device));
-                            
+        # "state" type numpy array
+        # "action" type int
+        # "next_state" type numpy array
+        # "reward" type flot or int
+        self.memory.push(   torch.from_numpy(state).float().unsqueeze(0).to(self.buffer_device),
+                            torch.from_numpy(np.array([[action]])).to(self.buffer_device),
+                            next_state if next_state is None else torch.from_numpy(next_state).float().unsqueeze(0).to(self.buffer_device),
+                            torch.from_numpy(np.array([[reward]])).float().to(self.buffer_device));
+    
     def target_update(self):
         self.target_net.load_state_dict(self.policy_net.state_dict());#copied weight of policy_net to target net.
 
@@ -357,15 +371,17 @@ class DQN_Module():
         reward_batch = torch.cat(batch_data.reward).to(self.device);
 
         state_action_values = self.policy_net(state_batch).gather(1,action_batch);
+        
         # gather() parsing the result according to action_batch.
         # example) a=[[1,2],[3,4],[5,6]],b=[1,0,1] => a.gather(1,b) = [2,3,6]
         
         next_state_values = torch.zeros(self.batch_size,device=self.device);
         next_state_values[non_final_mask]  = self.target_net(non_final_next_state).max(1)[0].detach();# target_net decide next state. In order to separated update, you detach the result.
         
-        expected_state_action_values = reward_batch+(GAMMA*next_state_values);
+        expected_state_action_values = reward_batch.squeeze()+(GAMMA*next_state_values);
+
         
-        loss = self.criterion(state_action_values,expected_state_action_values.unsqueeze(1));
+        loss = self.criterion(state_action_values.squeeze(),expected_state_action_values);
         # loss = reward + gamma*Qt(s',a') - Qp(s,a);
         
         self.optimizer.zero_grad();
@@ -422,11 +438,14 @@ class DDQN_Module():
     
     def get_policy_action(self,state,action_num=2):
         # state is network 1 batch input data
+        state = torch.from_numpy(state).float().to(self.device).unsqueeze(0);
+
         sample = random.random();
         threshold=self.Threshold.get_threshold();
+
         if (sample > threshold):
             with torch.no_grad():# don't update 
-                output  = self.policy_net(state.to(self.device));
+                output  = self.policy_net(state);
                 # max(1) mean data get maximun value based 1 dimension tensor.
                 # .max(1) same method => np.argmax(output,axis=1)
                 # if a=[[1,2],[3,4],[5,6]], np.argmax(a,axis=1)  = [ 2 , 4 , 6 ];
@@ -434,15 +453,20 @@ class DDQN_Module():
                 # max_value,max_value_index=output.max(1);
                 # output.max(1) return tensor[ max value, index of max value]; => example a=tensor[[1,2],[3,4],[6,1]], a.max(1) = tensor[[ 2 , 4 , 6 ], [ 1 , 1 , 0 ]]
                 # output.max(1)[1] is index => example a=tensor[[1,2],[3,4],[6,1]], a.max(1) = [[ 2 , 4 , 6 ], [ 1 , 1 , 0 ] ], a.max(1)[1] = [1,1,0]
-                return index_output.view(1,1);
+                return index_output.item();
         else:
-            return torch.tensor([[random.randrange(action_num)]],device=self.device,dtype=torch.long);
+            return random.randrange(action_num);
     
     def stack_memory(self,state=None,action=None,next_state=None,reward=None):
-        self.memory.push(   state.to(self.buffer_device),
-                            action.to(self.buffer_device),
-                            next_state if next_state==None else next_state.to(self.buffer_device),
-                            reward.to(self.buffer_device));
+        # "state" type numpy array
+        # "action" type int
+        # "next_state" type numpy array
+        # "reward" type flot or int
+
+        self.memory.push(   torch.from_numpy(state).float().unsqueeze(0).to(self.buffer_device),
+                            torch.from_numpy(np.array([[action]])).to(self.buffer_device),
+                            next_state if next_state is None else torch.from_numpy(next_state).float().unsqueeze(0).to(self.buffer_device),
+                            torch.from_numpy(np.array([[reward]])).float().to(self.buffer_device));
                             
     def target_update(self):
         self.target_net.load_state_dict(self.policy_net.state_dict());#copied weight of policy_net to target net.
@@ -487,17 +511,15 @@ class DDQN_Module():
         with torch.no_grad():
             next_state_action_values = self.policy_net(non_final_next_state).max(1)[1].detach();
         #                   ^ a' = Qp(s',a')
-
+        
         next_state_values = torch.zeros(self.batch_size,device=self.device);
         next_state_values[non_final_mask]  = self.target_net(non_final_next_state).gather(1,next_state_action_values.unsqueeze(1)).detach().squeeze(1);
         #                                              ^ Qt(s', Qp(s',a') )
         
-        expected_state_action_values = reward_batch+(GAMMA*next_state_values);
+        expected_state_action_values = reward_batch.squeeze()+(GAMMA*next_state_values);
         # ========================== Double DQN ======================================
         
-        loss = self.criterion(state_action_values,expected_state_action_values.unsqueeze(1));
-        
-        
+        loss = self.criterion(state_action_values.squeeze(),expected_state_action_values);# "state_action_values" shape is [batch,1] so .squeeze()
         
         self.optimizer.zero_grad();
         loss.backward();
