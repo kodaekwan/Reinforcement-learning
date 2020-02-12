@@ -46,7 +46,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 Actor_Critic_net=Model(input_size=4,output_size=2);
 
 RL=DK_ReinforcementLearning.AC_Mono_PG_Module(  Actor_Critic_net=Actor_Critic_net,
-                                                device=device);
+                                                device=device,
+                                                using_entropy=True);
 
 RL.set_Optimizer(optimizer=torch.optim.Adam(RL.Actor_Critic_net.parameters(),lr=0.01));
 RL.set_Criterion(criterion=torch.nn.SmoothL1Loss());

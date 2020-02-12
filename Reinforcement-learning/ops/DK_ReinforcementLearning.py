@@ -23,7 +23,6 @@ Transition = namedtuple('Transition',('state','action','next_state','reward'));
 
 History = namedtuple('History',['log_prob','value']);
 
-
 class ReplayMemory(object):
     def __init__(self,capacity):
         self.capacity = capacity;
@@ -56,12 +55,13 @@ class AC_PG_Module():
     #               ▽              ▽    
     # Output    [Advantage],     [Value]    !! Advantage channel size is policy number,  Value channel size is 1 !!
     
-    def __init__(self,Actor_net,Critic_net,device=None):
+    def __init__(self,Actor_net,Critic_net,device=None,using_entropy=False):
         if(device==None):
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
         else:
             self.device=device;
-        
+        self.using_entropy = using_entropy;
+
         self.Actor_net = Actor_net;
         self.Actor_net.to(self.device)
         self.Actor_net.eval();
@@ -72,6 +72,7 @@ class AC_PG_Module():
 
         self.history =[];
         self.rewards =[];
+        self.entropies = [];
         self.softmax = torch.nn.Softmax().to(self.device);
         self.eps = np.finfo(np.float32).eps.item();
 
@@ -103,6 +104,8 @@ class AC_PG_Module():
         m = Categorical(probs);
         action = m.sample();
         self.history.append( History( m.log_prob(action),state_value ) );
+        if self.using_entropy:
+            self.entropies.append(m.entropy().mean());
         return action.item();
     
     def stack_reward(self,reward=None):
@@ -151,17 +154,21 @@ class AC_PG_Module():
         
 
         self.Critic_optimizer.zero_grad();
-        critic_loss = torch.stack(value_losses).sum();
+        critic_loss = torch.stack(value_losses).mean();
         critic_loss.backward();
         self.Critic_optimizer.step();
 
         self.Actor_optimizer.zero_grad();
-        actor_loss = torch.stack(policy_losses).sum();
+        actor_loss = torch.stack(policy_losses).mean();
+        if self.using_entropy:
+            actor_loss+=-0.001*torch.stack(self.entropies).mean();
         actor_loss.backward();
         self.Actor_optimizer.step();
 
         del self.rewards[:];
         del self.history[:];
+        if self.using_entropy:
+            del self.entropies[:];
         
         self.Critic_net.eval();
         self.Actor_net.eval();
@@ -182,18 +189,19 @@ class AC_Mono_PG_Module():
     #               ▽        ▽    
     # Output  [[Advantage],[Value]]    !! Advantage channel size is policy number,  Value channel size is 1 !!
 
-    def __init__(self,Actor_Critic_net,device=None):
+    def __init__(self,Actor_Critic_net,device=None,using_entropy=False):
         if(device==None):
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
         else:
             self.device=device;
-        
+        self.using_entropy = using_entropy;
         self.Actor_Critic_net = Actor_Critic_net;
         self.Actor_Critic_net.to(self.device)
         self.Actor_Critic_net.eval();
 
         self.history =[];
         self.rewards =[];
+        self.entropies = [];
         self.softmax = torch.nn.Softmax().to(self.device);
         self.eps = np.finfo(np.float32).eps.item();
     
@@ -218,6 +226,8 @@ class AC_Mono_PG_Module():
         m = Categorical(probs);
         action = m.sample();
         self.history.append( History( m.log_prob(action),state_value ) );
+        if self.using_entropy:
+            self.entropies.append(m.entropy().mean());
         return action.item();
     
     def stack_reward(self,reward=None):
@@ -250,6 +260,7 @@ class AC_Mono_PG_Module():
         # Qp        : policy network
         # Qp(s,a)   : Accumulated total reward -> returns
         # logπ(a|s) : log-probability of the action taken ->log_prob
+        
         for (log_prob,value), returns_ in zip(self.history, returns):
             
             value=value.squeeze(0);
@@ -265,22 +276,19 @@ class AC_Mono_PG_Module():
             # value Loss = Distance between Q(s,a) and V(s)
             value_losses.append(self.criterion(value,returns_));
         
-        
         self.optimizer.zero_grad();
-        loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum();
+        loss = torch.stack(policy_losses).mean() + torch.stack(value_losses).mean();
+        if self.using_entropy:
+            loss+=-0.001*torch.stack(self.entropies).mean();
         loss.backward();
         self.optimizer.step();
 
         del self.rewards[:];
         del self.history[:];
-        
+        if self.using_entropy:
+            del self.entropies[:];
         self.Actor_Critic_net.eval();
         return loss.item();        
-
-
-
-
-
 
 
 
@@ -299,7 +307,6 @@ class PG_Module():
         # initial policy and reward history
         self.history = [];
         self.rewards = [];
-        torch.nn.gaussian
         self.softmax = torch.nn.Softmax().to(self.device);
         self.eps = np.finfo(np.float32).eps;
 
