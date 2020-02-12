@@ -45,6 +45,7 @@ class ReplayMemory(object):
 
 class AC_PG_Module():
     # Actor-Critic Stereo type Policy Gradient
+    # Stereo mean that Separated Actor and Critic layer.
     #   Input     [State]       [State]
     #                ▽             ▽
     #          |===========| |===========|
@@ -53,7 +54,8 @@ class AC_PG_Module():
     #          |  [Actor]  | | [Critic]  |
     #          |===========| |===========|
     #               ▽              ▽    
-    # Output  [[Advantage],     [Value]]    !! Advantage channel size is policy number,  Value channel size is 1 !!
+    # Output    [Advantage],     [Value]    !! Advantage channel size is policy number,  Value channel size is 1 !!
+    
     def __init__(self,Actor_net,Critic_net,device=None):
         if(device==None):
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
@@ -63,6 +65,107 @@ class AC_PG_Module():
         self.Actor_net = Actor_net;
         self.Actor_net.to(self.device)
         self.Actor_net.eval();
+
+        self.Critic_net = Critic_net;
+        self.Critic_net.to(self.device)
+        self.Critic_net.eval();
+
+        self.history =[];
+        self.rewards =[];
+        self.softmax = torch.nn.Softmax().to(self.device);
+        self.eps = np.finfo(np.float32).eps.item();
+
+    def set_Criterion(self,criterion=None):    
+        if(criterion==None):
+            self.criterion = torch.nn.SmoothL1Loss().to(self.device);
+        else:
+            self.criterion = criterion.to(self.device);
+
+    def set_ActorOptimizer(self,optimizer=None):
+        if(optimizer==None):
+            self.Actor_optimizer = torch.optim.Adam(self.Actor_net.parameters());
+        else:
+            self.Actor_optimizer = optimizer;
+    
+    def set_CriticOptimizer(self,optimizer=None):
+        if(optimizer==None):
+            self.Critic_optimizer = torch.optim.Adam(self.Critic_net.parameters());
+        else:
+            self.Critic_optimizer = optimizer;
+
+    def get_policy_action(self,state,action_num=None):
+        
+        #state = torch.tensor([state],dtype=torch.float32).to(self.device);
+        state = torch.from_numpy(state).float().to(self.device).unsqueeze(0);
+        state_value =self.Critic_net(state);
+        probs = self.Actor_net(state);
+        probs = self.softmax(probs);
+        m = Categorical(probs);
+        action = m.sample();
+        self.history.append( History( m.log_prob(action),state_value ) );
+        return action.item();
+    
+    def stack_reward(self,reward=None):
+        self.rewards.append(reward);
+    
+    def update(self,GAMMA=0.99,parameter_clamp=None):
+        # "parameter_clamp" example) parameter_clamp=(-1,1)
+        
+        if(len(self.rewards)==0):
+            return;
+        self.Critic_net.train();
+        self.Actor_net.train();
+        R = 0;
+
+        policy_losses = [];
+        value_losses = [];
+        returns =[];
+
+        for r in self.rewards[::-1]:
+            R = r + GAMMA*R;
+            returns.insert(0,R);
+        
+        returns = torch.tensor(returns);
+        returns = (returns-returns.mean()) / (returns.std()-self.eps);
+        
+        # Calculate loss
+        # Monte-Carlo Policy Gradient
+        # Loss = − Qp(s,a)logπ(a|s)
+        # Qp        : policy network
+        # Qp(s,a)   : Accumulated total reward -> returns
+        # logπ(a|s) : log-probability of the action taken ->log_prob
+        for (log_prob,value), returns_ in zip(self.history, returns):
+            
+            value=value.squeeze(0);
+            returns_ = torch.tensor(returns_).to(self.device);
+            
+            # Advantage Actor-Critic
+            # A(s,a)  =  Q(s,a)  −  V(s)
+            advantage = returns_ - value;
+            
+            # policy Loss = -A(s,a)logπ(a|s)
+            policy_losses.append(-log_prob*advantage.detach());# In order to Stable calculate, it need to advantage.detach()
+            
+            # value Loss = Distance between Q(s,a) and V(s)
+            value_losses.append(self.criterion(value,returns_));
+        
+
+        self.Critic_optimizer.zero_grad();
+        critic_loss = torch.stack(value_losses).sum();
+        critic_loss.backward();
+        self.Critic_optimizer.step();
+
+        self.Actor_optimizer.zero_grad();
+        actor_loss = torch.stack(policy_losses).sum();
+        actor_loss.backward();
+        self.Actor_optimizer.step();
+
+        del self.rewards[:];
+        del self.history[:];
+        
+        self.Critic_net.eval();
+        self.Actor_net.eval();
+        return actor_loss.item(),critic_loss.item();
 
 
 
@@ -102,7 +205,7 @@ class AC_Mono_PG_Module():
 
     def set_Optimizer(self,optimizer=None):
         if(optimizer==None):
-            self.optimizer = torch.optim.Adam(self.policy_net.parameters());
+            self.optimizer = torch.optim.Adam(self.Actor_Critic_net.parameters());
         else:
             self.optimizer = optimizer;
 
@@ -126,6 +229,7 @@ class AC_Mono_PG_Module():
         
         if(len(self.rewards)==0):
             return;
+        self.Actor_Critic_net.train();
         R = 0;
 
         policy_losses = [];
@@ -139,20 +243,26 @@ class AC_Mono_PG_Module():
         returns = torch.tensor(returns);
         returns = (returns-returns.mean()) / (returns.std()-self.eps);
         
-        # Advantage Actor-Critic
-        # A(s,a)=Q(s,a)−V(s)
         
+        # Calculate loss
+        # Monte-Carlo Policy Gradient
+        # Loss = − Qp(s,a)logπ(a|s)
+        # Qp        : policy network
+        # Qp(s,a)   : Accumulated total reward -> returns
+        # logπ(a|s) : log-probability of the action taken ->log_prob
         for (log_prob,value), returns_ in zip(self.history, returns):
             
             value=value.squeeze(0);
             returns_ = torch.tensor(returns_).to(self.device);
-
-            advantage = returns_ - value.detach();# In order to Stable calculate, it need to value.detach()
-
-            # calculate loss
-            policy_losses.append(-log_prob*advantage);
             
-            # calculate loss
+            # Advantage Actor-Critic
+            # A(s,a)  =  Q(s,a)  −  V(s)
+            advantage = returns_ - value;
+            
+            # policy Loss = -A(s,a)logπ(a|s)
+            policy_losses.append(-log_prob*advantage.detach());# In order to Stable calculate, it need to advantage.detach()
+            
+            # value Loss = Distance between Q(s,a) and V(s)
             value_losses.append(self.criterion(value,returns_));
         
         
@@ -164,6 +274,7 @@ class AC_Mono_PG_Module():
         del self.rewards[:];
         del self.history[:];
         
+        self.Actor_Critic_net.eval();
         return loss.item();        
 
 
@@ -188,6 +299,7 @@ class PG_Module():
         # initial policy and reward history
         self.history = [];
         self.rewards = [];
+        torch.nn.gaussian
         self.softmax = torch.nn.Softmax().to(self.device);
         self.eps = np.finfo(np.float32).eps;
 
@@ -478,7 +590,7 @@ class DDQN_Module():
         if len(self.memory)<(self.batch_size+self.train_start):
             return;
         #print("train");
-        self.policy_net.train();# 
+        self.policy_net.train();#
         # if memory size over self.batch_size then train network model.
         
         # get batch data
@@ -498,7 +610,6 @@ class DDQN_Module():
         # gather() parsing the result according to action_batch.
         # example) a=[[1,2],[3,4],[5,6]],b=[1,0,1] => a.gather(1,b) = [2,3,6]
 
-
         # ========================== Double DQN ======================================
         # reference http://papers.nips.cc/paper/3964-double-q-learning
         
@@ -508,8 +619,7 @@ class DDQN_Module():
         # **** a' of Double DQN is result of current Qp ****
         # Double DQN:  loss = reward + gamma*Qt(s', Qp(s',a') ) - Qp(s,a); 
         
-        with torch.no_grad():
-            next_state_action_values = self.policy_net(non_final_next_state).max(1)[1].detach();
+        next_state_action_values = self.policy_net(non_final_next_state).max(1)[1].detach();
         #                   ^ a' = Qp(s',a')
         
         next_state_values = torch.zeros(self.batch_size,device=self.device);

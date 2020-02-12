@@ -19,8 +19,7 @@ class Model(torch.nn.Module):
         self.ac2  = torch.nn.ReLU();
         self.dropout2 = torch.nn.Dropout(0.1);
     
-        self.actor = torch.nn.Linear(64,output_size);
-        self.critic = torch.nn.Linear(64,1);
+        self.classifier = torch.nn.Linear(64,output_size);
 
     def forward(self,x):
         x=self.linear1(x);
@@ -31,7 +30,7 @@ class Model(torch.nn.Module):
         x=self.dropout2(x);
         x=self.ac2(x);
         
-        return self.actor(x),self.critic(x);
+        return self.classifier(x);
 
 
 game=DK_ReinforcementLearning.GAME();
@@ -43,12 +42,15 @@ print("game action number : ",max_action_num);
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 
-Actor_Critic_net=Model(input_size=4,output_size=2);
+Actor_net=Model(input_size=4,output_size=2);
+Critic_net=Model(input_size=4,output_size=1);
 
-RL=DK_ReinforcementLearning.AC_Mono_PG_Module(  Actor_Critic_net=Actor_Critic_net,
-                                                device=device);
+RL=DK_ReinforcementLearning.AC_PG_Module(   Actor_net=Actor_net,
+                                            Critic_net=Critic_net,
+                                            device=device);
 
-RL.set_Optimizer(optimizer=torch.optim.Adam(RL.Actor_Critic_net.parameters(),lr=0.01));
+RL.set_ActorOptimizer(optimizer=torch.optim.Adam(RL.Actor_net.parameters(),lr=0.01));
+RL.set_CriticOptimizer(optimizer=torch.optim.Adam(RL.Critic_net.parameters(),lr=0.01));
 RL.set_Criterion(criterion=torch.nn.SmoothL1Loss());
 
 for episode in range(1000):
