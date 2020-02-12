@@ -21,6 +21,9 @@ class Episode_Threshold():#random Threshold
 
 Transition = namedtuple('Transition',('state','action','next_state','reward'));
 
+History = namedtuple('History',['log_prob','value']);
+
+
 class ReplayMemory(object):
     def __init__(self,capacity):
         self.capacity = capacity;
@@ -40,6 +43,129 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory);
 
+class AC_PG_Module():
+    # Actor-Critic Stereo type Policy Gradient
+    #   Input     [State]       [State]
+    #                ▽             ▽
+    #          |===========| |===========|
+    #          | [Decoder] | | [Decoder] |
+    #  Network |     ▽     | |     ▽     |
+    #          |  [Actor]  | | [Critic]  |
+    #          |===========| |===========|
+    #               ▽              ▽    
+    # Output  [[Advantage],     [Value]]    !! Advantage channel size is policy number,  Value channel size is 1 !!
+    def __init__(self,Actor_net,Critic_net,device=None):
+        if(device==None):
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
+        else:
+            self.device=device;
+        
+        self.Actor_net = Actor_net;
+        self.Actor_net.to(self.device)
+        self.Actor_net.eval();
+
+
+
+class AC_Mono_PG_Module():
+    # Actor-Critic Mono type Policy Gradient
+    # Mono mean that Comprise Actor-Critic layer in One Network, it share feature through Decoder layer.
+    #   Input        [State]
+    #                   ▽
+    #          |==================|
+    #          |    [Decoder]     |
+    #  Network |      ▽   ▽       |
+    #          | [Actor] [Critic] |
+    #          |==================|
+    #               ▽        ▽    
+    # Output  [[Advantage],[Value]]    !! Advantage channel size is policy number,  Value channel size is 1 !!
+
+    def __init__(self,Actor_Critic_net,device=None):
+        if(device==None):
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
+        else:
+            self.device=device;
+        
+        self.Actor_Critic_net = Actor_Critic_net;
+        self.Actor_Critic_net.to(self.device)
+        self.Actor_Critic_net.eval();
+
+        self.history =[];
+        self.rewards =[];
+        self.softmax = torch.nn.Softmax().to(self.device);
+        self.eps = np.finfo(np.float32).eps.item();
+    
+    def set_Criterion(self,criterion=None):    
+        if(criterion==None):
+            self.criterion = torch.nn.SmoothL1Loss().to(self.device);
+        else:
+            self.criterion = criterion.to(self.device);
+
+    def set_Optimizer(self,optimizer=None):
+        if(optimizer==None):
+            self.optimizer = torch.optim.Adam(self.policy_net.parameters());
+        else:
+            self.optimizer = optimizer;
+
+    def get_policy_action(self,state,action_num=None):
+        
+        #state = torch.tensor([state],dtype=torch.float32).to(self.device);
+        state = torch.from_numpy(state).float().to(self.device).unsqueeze(0);
+        probs,state_value = self.Actor_Critic_net(state);
+        probs=self.softmax(probs);     
+        m = Categorical(probs);
+        action = m.sample();
+        self.history.append( History( m.log_prob(action),state_value ) );
+        return action.item();
+    
+    def stack_reward(self,reward=None):
+        self.rewards.append(reward);
+    
+
+    def update(self,GAMMA=0.99,parameter_clamp=None):
+        # "parameter_clamp" example) parameter_clamp=(-1,1)
+        
+        if(len(self.rewards)==0):
+            return;
+        R = 0;
+
+        policy_losses = [];
+        value_losses = [];
+        returns =[];
+
+        for r in self.rewards[::-1]:
+            R = r + GAMMA*R;
+            returns.insert(0,R);
+        
+        returns = torch.tensor(returns);
+        returns = (returns-returns.mean()) / (returns.std()-self.eps);
+        
+        for (log_prob,value), R_ in zip(self.history, returns):
+            advantage = R_ - value.squeeze(0).item();
+            # calculate loss
+            policy_losses.append(-log_prob*advantage);
+
+            accumulated_reward = torch.tensor([R_]).to(self.device);
+            value_losses.append(self.criterion(value,accumulated_reward));
+        
+        
+        self.optimizer.zero_grad();
+
+        loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum();
+        loss.backward();
+        self.optimizer.step();
+
+        del self.rewards[:];
+        del self.history[:];
+        
+        return loss.item();        
+
+
+
+
+
+
+
+
 class PG_Module():
     # Monte-Carlo Policy_Gradient
     def __init__(self,policy_net,device=None):
@@ -53,15 +179,19 @@ class PG_Module():
         self.policy_net.eval();
         
         # initial policy and reward history
-        self.policy_history = torch.autograd.Variable(torch.Tensor());
-        self.reward_history = [];
-        self.softmax = torch.nn.Softmax();
+        self.history = [];
+        self.rewards = [];
+        self.softmax = torch.nn.Softmax().to(self.device);
+        self.eps = np.finfo(np.float32).eps;
 
         
     def get_policy_action(self,state,action_num=2):
         # state is network 1 batch input data
+        state = torch.from_numpy(state).float().to(self.device).unsqueeze(0);
         
-        output = self.softmax(self.policy_net(torch.autograd.Variable(state).to(self.device)));
+        output = self.policy_net(state);
+        output = self.softmax(output);
+
         c = Categorical(output);# stack output data 
         # example) output = [[1,2],[3,4],[6,5]] ,c = Categorical(output), c = [[1,2],[3,4],[6,5]]
 
@@ -69,14 +199,10 @@ class PG_Module():
         # example) c = [[1,2,0],[3,4,0],[6,5,0],[7,8,9]], c.sample() = [1,1,0,2]
 
         # stack prob by model
-        if len(self.policy_history) > 0:
-            self.policy_history = torch.cat([self.policy_history, c.log_prob(action).reshape(1)])
-            # .log_prob(index_list) return ln(probability value) accoding to index"c.sample()=[1,1,0]"
-            # example) c = [[1,2,0],[3,4,0],[6,5,0],[7,8,9]], c.sample() = [1,1,0,2], c.log_prob(c.sample()) = [2,4,6,9]
-        else:
-            self.policy_history = (c.log_prob(action)).reshape(1);
-        
-        return action;
+        self.history.append( History( c.log_prob(action),None) );
+        # .log_prob(index_list) return ln(probability value) accoding to index"c.sample()=[1,1,0]"
+            # example) c = [[1,2,0],[3,4,0],[6,5,0],[7,8,9]], c.sample() = [1,1,0,2], c.log_prob(c.sample()) = [ln(2),ln(4),ln(6),ln(9)]
+        return action.item();
 
     def set_Optimizer(self,optimizer=None):
         if(optimizer==None):
@@ -85,37 +211,42 @@ class PG_Module():
             self.optimizer = optimizer;
 
     def stack_reward(self,reward=None):
-        self.reward_history.append(reward);
+        self.rewards.append(reward);
     
     def update(self,GAMMA=0.99,parameter_clamp=None):
         # "parameter_clamp" example) parameter_clamp=(-1,1)
         
-        if(len(self.reward_history)==0):
+        if(len(self.rewards)==0):
             return;
 
         self.policy_net.train();
+
         R = 0;
-        rewards_trajectory = []
+        returns = []
 
-        # accumulate reward  => reward_history[1.0,1.0,1.0] => rewards_trajectory[2.98, 1.99, 1.0]
-        for r in self.reward_history[::-1]:
+        # accumulated reward : "returns"=[1.0,1.0,1.0] => "returns"=[2.98, 1.99, 1.0]
+        for r in self.rewards[::-1]:
             R = r + (GAMMA * R);
-            rewards_trajectory.insert(0,R);
+            returns.insert(0,R);
 
-        # Scale rewards_trajectory normalization => rewards_trajectory range(-x,y) => range(-n,n), mean = 0
-        rewards_trajectory = torch.FloatTensor(rewards_trajectory);
-        rewards_trajectory = (rewards_trajectory-rewards_trajectory.mean())/(rewards_trajectory.std() + np.finfo(np.float32).eps);
+        # Scale accumulated reward normalization => "returns" change the range from (1.0, N) to (-n , n) and mean = 0
+        returns = torch.FloatTensor(returns);
+        returns = (returns-returns.mean())/(returns.std() + self.eps);
         
         # Calculate loss
         # Monte-Carlo Policy Gradient
-        # Loss = − ∑Qp(s,a)logπ(a|s)
+        # Loss = − Qp(s,a)logπ(a|s)
         # Qp        : policy network
-        # ∑Qp(s,a)  : Accumulated total reward ->rewards_trajectory
-        # logπ(a|s) : log-probability of the action taken ->policy_history
-
-        pi_r = torch.mul(self.policy_history.to(self.device),torch.autograd.Variable(rewards_trajectory).to(self.device));
+        # Qp(s,a)   : Accumulated total reward ->returns
+        # logπ(a|s) : log-probability of the action taken ->log_prob
+        policy_losses = [];
+        
         # policy Gradient objective is pi_r maximize.
-        loss = -torch.sum(pi_r,dim=-1);
+        for (log_prob,_), advantage in zip(self.history, returns):
+            pi_r = log_prob*advantage;
+            policy_losses.append(-pi_r);
+
+        loss = torch.stack(policy_losses).sum();
         # this score function had high variance problem because logπ(a|s).
 
         # update model weight
@@ -127,14 +258,11 @@ class PG_Module():
         self.optimizer.step();
         self.policy_net.eval();
 
-        total_reward = np.sum(self.reward_history);
-        avg_loss = loss.item();
-
-        # clear policy and reward history
-        self.policy_history = torch.autograd.Variable(torch.Tensor());
-        self.reward_history= [];
+        # clear policy history and reward 
+        del self.history[:];
+        del self.rewards[:];
         
-        return avg_loss,total_reward;
+        return loss.item();
 
 
 class DQN_Module():

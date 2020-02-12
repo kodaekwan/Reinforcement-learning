@@ -19,7 +19,8 @@ class Model(torch.nn.Module):
         self.ac2  = torch.nn.ReLU();
         self.dropout2 = torch.nn.Dropout(0.1);
     
-        self.head = torch.nn.Linear(64,output_size,bias=False);
+        self.advantage = torch.nn.Linear(64,output_size);
+        self.value = torch.nn.Linear(64,1);
 
     def forward(self,x):
         x=self.linear1(x);
@@ -30,7 +31,7 @@ class Model(torch.nn.Module):
         x=self.dropout2(x);
         x=self.ac2(x);
         
-        return self.head(x);
+        return self.advantage(x),self.value(x);
 
 
 game=DK_ReinforcementLearning.GAME();
@@ -42,27 +43,27 @@ print("game action number : ",max_action_num);
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 
-#policy gradient requirement single model
-policy_net=Model(input_size=4,output_size=2);
+Actor_Critic_net=Model(input_size=4,output_size=2);
 
-RL=DK_ReinforcementLearning.PG_Module(  policy_net=policy_net,
-                                        device=device);
+RL=DK_ReinforcementLearning.AC_Mono_PG_Module(  Actor_Critic_net=Actor_Critic_net,
+                                                device=device);
 
-RL.set_Optimizer(optimizer=torch.optim.Adam(RL.policy_net.parameters(),lr=0.01));
+RL.set_Optimizer(optimizer=torch.optim.Adam(RL.Actor_Critic_net.parameters(),lr=0.01));
+RL.set_Criterion(criterion=torch.nn.SmoothL1Loss());
 
 for episode in range(1000):
     #view
     game.reset();
-    now_state = game.env.state
+    now_state = game.env.state;
     for t  in range(1000):
 
         # Decide action from policy network and !!!stack policy ouput to memory!!!
-        action=RL.get_policy_action(state=now_state,action_num=2);
-
+        action=RL.get_policy_action(state=now_state,action_num=None);
+        
         # Execute action in Game environment by network policy
         observation,reward,done,info = game.set_control(action);
+
         # observation shape => [cart-position ,cart-velocity, pole-position, pole-velocity]
-        
         # stack results to memory
         RL.stack_reward(reward);
 
@@ -79,8 +80,7 @@ for episode in range(1000):
                 print("==================100=======")
             break;
     
-    # update policy model
-    RL.update(GAMMA=0.99,parameter_clamp=(-1,1));
-
+    # update 
+    RL.update(GAMMA=0.99,parameter_clamp=None);
 
 game.close();

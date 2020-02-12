@@ -10,6 +10,7 @@ from torch.distributions import Categorical
 
 env = gym.make('CartPole-v0')
 env.seed(543)
+env._max_episode_steps=10001;
 torch.manual_seed(543)
 
 SavedAction = namedtuple('SavedAction',['log_prob','value']);
