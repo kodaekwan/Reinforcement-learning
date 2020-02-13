@@ -45,10 +45,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 Actor_net=Model(input_size=4,output_size=2);
 Critic_net=Model(input_size=4,output_size=1);
 
-RL=DK_ReinforcementLearning.AC_PG_Module(   Actor_net=Actor_net,
-                                            Critic_net=Critic_net,
-                                            device=device,
-                                            using_entropy=True);
+RL=DK_ReinforcementLearning.AC_Stereo_PG_Module(Actor_net=Actor_net,
+                                                Critic_net=Critic_net,
+                                                device=device,
+                                                using_entropy=True);
 
 RL.set_ActorOptimizer(optimizer=torch.optim.Adam(RL.Actor_net.parameters(),lr=0.01));
 RL.set_CriticOptimizer(optimizer=torch.optim.Adam(RL.Critic_net.parameters(),lr=0.01));

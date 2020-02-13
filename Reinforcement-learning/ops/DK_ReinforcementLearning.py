@@ -5,6 +5,7 @@ import numpy as np
 import math
 from collections import namedtuple
 from torch.distributions import Categorical
+from torch.distributions import Normal
 
 
 class Episode_Threshold():#random Threshold
@@ -43,7 +44,154 @@ class ReplayMemory(object):
         return len(self.memory);
 
 class AC_PG_Module():
-    # Actor-Critic Stereo type Policy Gradient
+    # vinila Actor-Critic On-Policy Gradient
+    # Stereo mean that Separated Actor and Critic layer.
+    #  Input      [State]----|       
+    #                ▽       | 
+    #          |===========| |
+    #          | [Decoder] | |
+    #  Network |     ▽     | |
+    #          |  [Actor]  | |
+    #          |===========| |
+    #                ▽       |
+    #  Output     [Prob]     |     
+    #                ▽       ▽
+    #  Input      [Prob],[State]       
+    #                ▽       
+    #          |===========| 
+    #          | [Decoder] | 
+    #  Network |     ▽     | 
+    #          | [Critic]  | 
+    #          |===========| 
+    #               ▽              
+    #  Output     [Value]  !! Prob channel size is policy number,  Value channel size is 1 !!
+    def __init__(self,Actor_net,Critic_net,device=None,using_entropy=False):
+        if(device==None):
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
+        else:
+            self.device=device;
+        self.using_entropy = using_entropy;
+
+        self.Actor_net = Actor_net;
+        self.Actor_net.to(self.device)
+        self.Actor_net.eval();
+
+        self.Critic_net = Critic_net;
+        self.Critic_net.to(self.device)
+        self.Critic_net.eval();
+
+        self.history =[];
+        self.rewards =[];
+        self.entropies = [];
+        self.softmax = torch.nn.Softmax().to(self.device);
+        self.eps = np.finfo(np.float32).eps.item();
+      
+    def set_Criterion(self,criterion=None):    
+        if(criterion==None):
+            self.criterion = torch.nn.SmoothL1Loss().to(self.device);
+        else:
+            self.criterion = criterion.to(self.device);
+
+    def set_ActorOptimizer(self,optimizer=None):
+        if(optimizer==None):
+            self.Actor_optimizer = torch.optim.Adam(self.Actor_net.parameters());
+        else:
+            self.Actor_optimizer = optimizer;
+    
+    def set_CriticOptimizer(self,optimizer=None):
+        if(optimizer==None):
+            self.Critic_optimizer = torch.optim.Adam(self.Critic_net.parameters());
+        else:
+            self.Critic_optimizer = optimizer;
+
+    def get_policy_action(self,state,action_num=None):
+        
+        #state = torch.tensor([state],dtype=torch.float32).to(self.device);
+        state = torch.from_numpy(state).float().to(self.device).unsqueeze(0);
+        output = self.Actor_net(state);
+
+        m = Categorical(self.softmax(output));
+        action = m.sample();
+        log_prob=m.log_prob(action);
+
+        state_value =self.Critic_net(state,output.detach());
+
+        self.history.append( History(log_prob,state_value ) );
+        numpy_action=action.item();
+
+        if self.using_entropy:
+            self.entropies.append(m.entropy().mean());
+
+        return numpy_action;
+    
+    def stack_reward(self,reward=None):
+        self.rewards.append(reward);
+    
+    def update(self,GAMMA=0.99,parameter_clamp=None):
+        # "parameter_clamp" example) parameter_clamp=(-1,1)
+        
+        if(len(self.rewards)==0):
+            return;
+        self.Critic_net.train();
+        self.Actor_net.train();
+        R = 0;
+
+        policy_losses = [];
+        value_losses = [];
+        returns =[];
+
+        for r in self.rewards[::-1]:
+            R = r + GAMMA*R;
+            returns.insert(0,R);
+        
+        returns = torch.tensor(returns);
+        returns = (returns-returns.mean()) / (returns.std()-self.eps);
+        
+
+        for (log_prob,value), returns_ in zip(self.history, returns):
+            value=value.squeeze(0);
+            returns_ = torch.tensor([returns_]).detach().to(self.device);
+            
+            # Advantage Actor-Critic
+            # A(s,a)  =  Q(s,a)  −  V(s)
+            advantage = returns_ - value;
+            
+            # policy Loss = -A(s,a)logπ(a|s)
+            policy_losses.append(-log_prob*advantage.detach());# In order to Stable calculate, it need to advantage.detach()
+            
+            # value Loss = Distance between Q(s,a) and V(s)
+            value_losses.append(self.criterion(value,returns_));
+
+        # Calculate loss
+        self.Critic_optimizer.zero_grad();
+        critic_loss = torch.stack(value_losses).mean();
+        critic_loss.backward();
+        self.Critic_optimizer.step();
+
+        self.Actor_optimizer.zero_grad();
+        actor_loss = torch.stack(policy_losses).mean();
+        if self.using_entropy:
+            actor_loss+=-0.001*torch.stack(self.entropies).mean();
+        actor_loss.backward();
+        self.Actor_optimizer.step();
+
+
+        del self.rewards[:];
+        del self.history[:];
+        if self.using_entropy:
+            del self.entropies[:];
+        
+        self.Critic_net.eval();
+        self.Actor_net.eval();
+        return actor_loss.item(),critic_loss.item();
+
+
+
+
+
+
+class AC_Stereo_PG_Module():
+    # Actor-Critic Stereo type On-Policy Gradient
     # Stereo mean that Separated Actor and Critic layer.
     #   Input     [State]       [State]
     #                ▽             ▽
@@ -75,7 +223,7 @@ class AC_PG_Module():
         self.entropies = [];
         self.softmax = torch.nn.Softmax().to(self.device);
         self.eps = np.finfo(np.float32).eps.item();
-
+      
     def set_Criterion(self,criterion=None):    
         if(criterion==None):
             self.criterion = torch.nn.SmoothL1Loss().to(self.device);
@@ -99,11 +247,15 @@ class AC_PG_Module():
         #state = torch.tensor([state],dtype=torch.float32).to(self.device);
         state = torch.from_numpy(state).float().to(self.device).unsqueeze(0);
         state_value =self.Critic_net(state);
+        
+        
         probs = self.Actor_net(state);
-        probs = self.softmax(probs);
+        probs = self.softmax(probs);     
         m = Categorical(probs);
         action = m.sample();
         self.history.append( History( m.log_prob(action),state_value ) );
+        numpy_action=action.item();
+
         if self.using_entropy:
             self.entropies.append(m.entropy().mean());
         return action.item();
@@ -140,7 +292,7 @@ class AC_PG_Module():
         for (log_prob,value), returns_ in zip(self.history, returns):
             
             value=value.squeeze(0);
-            returns_ = torch.tensor(returns_).to(self.device);
+            returns_ = torch.tensor([returns_]).detach().to(self.device);
             
             # Advantage Actor-Critic
             # A(s,a)  =  Q(s,a)  −  V(s)
@@ -177,7 +329,7 @@ class AC_PG_Module():
 
 
 class AC_Mono_PG_Module():
-    # Actor-Critic Mono type Policy Gradient
+    # Actor-Critic Mono type On-Policy Gradient
     # Mono mean that Comprise Actor-Critic layer in One Network, it share feature through Decoder layer.
     #   Input        [State]
     #                   ▽
@@ -194,6 +346,7 @@ class AC_Mono_PG_Module():
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
         else:
             self.device=device;
+        
         self.using_entropy = using_entropy;
         self.Actor_Critic_net = Actor_Critic_net;
         self.Actor_Critic_net.to(self.device)
@@ -202,9 +355,12 @@ class AC_Mono_PG_Module():
         self.history =[];
         self.rewards =[];
         self.entropies = [];
-        self.softmax = torch.nn.Softmax().to(self.device);
         self.eps = np.finfo(np.float32).eps.item();
-    
+
+
+        self.softmax = torch.nn.Softmax().to(self.device);
+            
+        
     def set_Criterion(self,criterion=None):    
         if(criterion==None):
             self.criterion = torch.nn.SmoothL1Loss().to(self.device);
@@ -222,13 +378,17 @@ class AC_Mono_PG_Module():
         #state = torch.tensor([state],dtype=torch.float32).to(self.device);
         state = torch.from_numpy(state).float().to(self.device).unsqueeze(0);
         probs,state_value = self.Actor_Critic_net(state);
+    
         probs=self.softmax(probs);     
         m = Categorical(probs);
         action = m.sample();
         self.history.append( History( m.log_prob(action),state_value ) );
+        numpy_action=action.item();
+
         if self.using_entropy:
             self.entropies.append(m.entropy().mean());
-        return action.item();
+
+        return numpy_action;
     
     def stack_reward(self,reward=None):
         self.rewards.append(reward);
@@ -264,7 +424,7 @@ class AC_Mono_PG_Module():
         for (log_prob,value), returns_ in zip(self.history, returns):
             
             value=value.squeeze(0);
-            returns_ = torch.tensor(returns_).to(self.device);
+            returns_ = torch.tensor([returns_]).detach().to(self.device);
             
             # Advantage Actor-Critic
             # A(s,a)  =  Q(s,a)  −  V(s)
@@ -287,10 +447,9 @@ class AC_Mono_PG_Module():
         del self.history[:];
         if self.using_entropy:
             del self.entropies[:];
+      
         self.Actor_Critic_net.eval();
         return loss.item();        
-
-
 
 class PG_Module():
     # Monte-Carlo Policy_Gradient
@@ -653,7 +812,8 @@ class GAME():
     import cv2
     def __init__(self,game_name='CartPole-v0'):
         import gym #$ pip3 install gym
-        self.env = gym.make(game_name);# make game
+        self.game_name=game_name
+        self.env = gym.make(self.game_name);# make game
         self.reset();
         
     def get_cart_location(self,image_width):
@@ -666,11 +826,19 @@ class GAME():
     def reset(self):
         self.env.reset();
         image_shape = self.get_screen().shape;
-        self.max_key_num = self.env.action_space.n;
+        
+        if self.game_name == 'Pendulum-v0':
+            self.max_key_num = 1;
+        else:
+            self.max_key_num = self.env.action_space.n;
+            
+            
         self.image_height = image_shape[0];
         self.image_width = image_shape[1];
         self.image_channel = image_shape[2];
-        self.cart_location=self.get_cart_location(self.image_width);
+
+        if self.game_name == 'CartPole-v0' or self.game_name == 'CartPole-v1':
+            self.cart_location=self.get_cart_location(self.image_width);
     
     def get_screen(self):
         return self.env.render(mode='rgb_array');
