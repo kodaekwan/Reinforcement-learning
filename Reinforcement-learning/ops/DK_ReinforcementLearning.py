@@ -63,7 +63,7 @@ class AC_PG_Module():
     #  Network |     ▽     | 
     #          | [Critic]  | 
     #          |===========| 
-    #               ▽              
+    #                ▽              
     #  Output     [Value]  !! Prob channel size is policy number,  Value channel size is 1 !!
     def __init__(self,Actor_net,Critic_net,device=None,using_entropy=False):
         if(device==None):

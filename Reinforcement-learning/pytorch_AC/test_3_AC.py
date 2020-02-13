@@ -24,7 +24,8 @@ class Actor(torch.nn.Module):
         self.classifier = torch.nn.Linear(64,self.output_size);
         self.classifier.weight.data.uniform_(-3e-3, 3e-3);
 
-    def forward(self,x):
+    def forward(self,state):
+        x=state
         x=self.linear1(x);
         x=self.dropout1(x);
         x=self.ac1(x);
@@ -73,6 +74,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 
 Actor_net=Actor(input_size=4,output_size=2);
 Critic_net=Critic(input_size=Actor_net.input_size+Actor_net.output_size);
+
 RL=DK_ReinforcementLearning.AC_PG_Module(Actor_net=Actor_net,
                                                 Critic_net=Critic_net,
                                                 device=device,
