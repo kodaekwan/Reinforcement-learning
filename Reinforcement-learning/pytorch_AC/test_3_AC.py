@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import sys
 sys.path.append("..")
-import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
+import ops.DK_ReinforcementLearning as DKRL
 
 torch.manual_seed(1);
 
@@ -63,7 +63,7 @@ class Critic(torch.nn.Module):
         x=self.ac2(x);
         return self.classifier(x);
 
-game=DK_ReinforcementLearning.GAME();
+game=DKRL.GAME();
 game.env._max_episode_steps=10001;
 game.env.seed(1); 
 
@@ -75,7 +75,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 Actor_net=Actor(input_size=4,output_size=2);
 Critic_net=Critic(input_size=Actor_net.input_size+Actor_net.output_size);
 
-RL=DK_ReinforcementLearning.AC_PG_Module(Actor_net=Actor_net,
+RL=DKRL.DiscreteSpace.AC_PG_Module(Actor_net=Actor_net,
                                                 Critic_net=Critic_net,
                                                 device=device,
                                                 using_entropy=False);

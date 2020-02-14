@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import sys
 sys.path.append("..")
-import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
+import ops.DK_ReinforcementLearning as DKRL
 
 torch.manual_seed(1);
 
@@ -39,7 +39,7 @@ class Model(torch.nn.Module):
         return self.actor(x),self.critic(x);
 
 
-game=DK_ReinforcementLearning.GAME(game_name='CartPole-v0');
+game=DKRL.GAME(game_name='CartPole-v0');
 game.env._max_episode_steps=1000;
 game.env.seed(1); 
 
@@ -50,7 +50,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 
 Actor_Critic_net=Model(input_size=4,output_size=2);
 
-RL=DK_ReinforcementLearning.AC_Mono_PG_Module(  Actor_Critic_net=Actor_Critic_net,
+RL=DKRL.DiscreteSpace.AC_Mono_PG_Module(  Actor_Critic_net=Actor_Critic_net,
                                                 device=device,
                                                 using_entropy=False);
 

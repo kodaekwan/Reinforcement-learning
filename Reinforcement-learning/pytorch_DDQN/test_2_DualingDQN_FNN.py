@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import sys
 sys.path.append("..")
-import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
+import ops.DK_ReinforcementLearning as DKRL
 
 
 class Model(torch.nn.Module):
@@ -43,7 +43,7 @@ class Model(torch.nn.Module):
         return output;
 
 
-game=DK_ReinforcementLearning.GAME();
+game=DKRL.GAME();
 game.env._max_episode_steps=10001;
 
 max_action_num=game.max_key_num;
@@ -54,7 +54,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 policy_net=Model(input_size=4,output_size=2);
 target_net=Model(input_size=4,output_size=2);
 
-RL=DK_ReinforcementLearning.DDQN_Module(policy_net=policy_net,
+RL=DKRL.DiscreteSpace.DDQN_Module(policy_net=policy_net,
                             target_net=target_net,
                             device=device,
                             batch_size=64,
