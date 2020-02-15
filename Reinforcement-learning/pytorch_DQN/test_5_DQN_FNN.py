@@ -4,6 +4,7 @@ import torch
 import sys
 sys.path.append("..")
 import ops.DK_ReinforcementLearning as DKRL
+torch.cuda.empty_cache()
 
 class Model(torch.nn.Module):
     def __init__(self,input_size=4,output_size=2):
@@ -45,6 +46,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 policy_net=Model(input_size=4,output_size=2);
 target_net=Model(input_size=4,output_size=2);
 
+
+
 RL=DKRL.DiscreteSpace.DQN_Module(policy_net=policy_net,
                             target_net=target_net,
                             device=device,
@@ -54,7 +57,7 @@ RL=DKRL.DiscreteSpace.DQN_Module(policy_net=policy_net,
 RL.set_Criterion(criterion=torch.nn.MSELoss())
 RL.set_Optimizer(optimizer=torch.optim.Adam(RL.policy_net.parameters(),lr=0.001,weight_decay=0.01));
 RL.set_Threshold(EPS_START=1.0,EPS_END=0.01,EPS_DECAY=400);
-RL.set_Memory(capacity=2000,buffer_device=torch.device("cpu"));
+RL.set_Memory(capacity=5000,buffer_device=torch.device("cpu"));
 
 
 for episode in range(1000):
@@ -99,7 +102,7 @@ for episode in range(1000):
             break;
         
         # update policy model
-        RL.update(GAMMA=0.99,parameter_clamp=(-1,1));
+        RL.update(GAMMA=0.99);
 
     # target model synchronization with policy model.
     if episode%10==0:
@@ -107,4 +110,3 @@ for episode in range(1000):
 
 
 game.close();
-plt.close();

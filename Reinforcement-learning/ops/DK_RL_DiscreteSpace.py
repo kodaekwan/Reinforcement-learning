@@ -153,7 +153,7 @@ class AC_Stereo_PG_Module():
     #  Network |     ▽     | |     ▽     |
     #          |  [Actor]  | | [Critic]  |
     #          |===========| |===========|
-    #               ▽              ▽    
+    #                ▽             ▽    
     # Output    [Advantage],     [Value]    !! Advantage channel size is policy number,  Value channel size is 1 !!
     
     def __init__(self,Actor_net,Critic_net,device=None,using_entropy=False):
@@ -514,9 +514,9 @@ class DQN_Module():
         self.train_start =train_start;
         self.policy_net=policy_net.to(self.device);
         self.target_net=target_net.to(self.device);
-        self.target_update();#first, copied weight of policy_net to target net.
         self.target_net.eval();# 
         self.policy_net.eval();# 
+        self.target_update();
         self.target_updata_count = 0;
 
     def set_Criterion(self,criterion=None):    
@@ -575,8 +575,8 @@ class DQN_Module():
                             torch.from_numpy(np.array([[reward]])).float().to(self.buffer_device));
     
     def target_update(self):
-        self.target_net.load_state_dict(self.policy_net.state_dict());#copied weight of policy_net to target net.
-
+        hard_update(self.target_net,self.policy_net);
+    
     def update(self,GAMMA=0.999,parameter_clamp=None):
         # "parameter_clamp" example) parameter_clamp=(-1,1)
 
@@ -623,7 +623,6 @@ class DQN_Module():
 
         self.optimizer.step();
         self.policy_net.eval();# 
-
 
 class DDQN_Module():
     # Double Deep Q Networks
@@ -700,7 +699,7 @@ class DDQN_Module():
                             torch.from_numpy(np.array([[reward]])).float().to(self.buffer_device));
                             
     def target_update(self):
-        self.target_net.load_state_dict(self.policy_net.state_dict());#copied weight of policy_net to target net.
+        hard_update(self.target_net,self.policy_net);#copied weight of policy_net to target net.
 
     def update(self,GAMMA=0.999,parameter_clamp=None):
         # "parameter_clamp" example) parameter_clamp=(-1,1)

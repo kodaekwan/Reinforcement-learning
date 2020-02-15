@@ -3,6 +3,7 @@ import numpy as np
 import sys
 sys.path.append("..")
 import ops.DK_ReinforcementLearning as DKRL
+import gc
 
 
 class Actor_Model(torch.nn.Module):
@@ -75,7 +76,7 @@ class Critic_Model(torch.nn.Module):
         output = self.fc4(sa);
         return output;
 
-game=DKRL.GAME();
+game=DKRL.GAME('Pendulum-v0');
 game.env._max_episode_steps=10001;
 game.env.seed(1); 
 
@@ -85,7 +86,7 @@ print("game action number : ",max_action_num);
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu");
 
 state_dim = 3
-action_dim = 2 
+action_dim = 1
 action_std = 2.0
 
 Actor_net=Actor_Model(state_dim=state_dim,action_dim=action_dim,output_std=action_std);
@@ -94,6 +95,60 @@ target_Actor_net=Actor_Model(state_dim=state_dim,action_dim=action_dim,output_st
 Critic_net=Critic_Model(state_dim=state_dim,action_dim=action_dim);
 target_Critic_net=Critic_Model(state_dim=state_dim,action_dim=action_dim);
 
+
+RL = DKRL.ContinuousSpace.DDPG_Module(  actor_net=Actor_net,
+                                        target_actor_net=target_Actor_net,
+                                        critic_net=Critic_net,
+                                        target_critic_net=target_Critic_net,
+                                        device=device,
+                                        batch_size=128,
+                                        train_start=0);
+
+RL.set_Noise(action_dim=action_dim,action_limit=action_std);
+RL.set_Memory(capacity=6000000,buffer_device=torch.device("cuda:0"));
+RL.set_ActorOptimizer();
+RL.set_CriticOptimizer();
+RL.set_Criterion();
+
+scores = []
+for episode in range(1000):
+    
+    observation = game.env.reset();
+    print("EPISODE: ",episode);
+    score= 0.;
+    for r in range(500):
+        if episode > 100:
+            game.env.render();
+       
+        state = np.float32(observation);
+
+        action = RL.get_exploration_action(state);
+
+        new_observation,reward, done, info = game.set_control(action);
+
+        score+=reward;
+        
+        if done: 
+            new_state = None
+        else:
+            new_state = np.float32(new_observation);
+            RL.stack_memory(state,action,new_state,reward);
+        
+        observation = new_observation;
+
+        RL.update();
+        if done:
+            break;
+    
+    
+    scores.append(score)
+    print("score: ",score);
+    print("stack memory : ",len(RL.memory));
+    print("=====================")
+    gc.collect();
+
+
+game.close();
 
 
 

@@ -5,7 +5,7 @@ import numpy as np
 import gym
 import sys
 sys.path.append("..")
-import ops.DK_ReinforcementLearning as DK_ReinforcementLearning
+import ops.DK_ReinforcementLearning as DKRL
 from torch.autograd import Variable
 import gc
 import matplotlib.pyplot as plt
@@ -102,25 +102,13 @@ class OrnsteinUhlenbeckActionNoise:
 		return self.X
 
 def hard_update(target, source):
-	"""
-	Copies the parameters from source network to target network
-	:param target: Target network (PyTorch)
-	:param source: Source network (PyTorch)
-	:return:
-	"""
 	for target_param, param in zip(target.parameters(), source.parameters()):
-			target_param.data.copy_(param.data)
+		target_param.data.copy_(param.clone().data)
+
 def soft_update(target, source, tau):
-	"""
-	Copies the parameters from source network (x) to target network (y) using the below update
-	y = TAU*x + (1 - TAU)*y
-	:param target: Target network (PyTorch)
-	:param source: Source network (PyTorch)
-	:return:
-	"""
-	for target_param, param in zip(target.parameters(), source.parameters()):
-		target_param.data.copy_(
-			target_param.data * (1.0 - tau) + param.data * tau
+    for target_param, param in zip(target.parameters(), source.parameters()):
+        target_param.data.copy_(
+			target_param.clone().data * (1.0 - tau) + param.clone().data * tau
 		)
 
 class Trainer:
@@ -138,8 +126,6 @@ class Trainer:
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),LEARNING_RATE);
         self.target_actor.eval();
         
-
-
         self.critic = Critic(self.stata_dim,self.action_dim).cuda();
         self.target_critic = Critic(self.stata_dim,self.action_dim).cuda();
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(),LEARNING_RATE);
@@ -160,9 +146,11 @@ class Trainer:
         return new_action;
     
     def optimize(self):
+        self.actor.train();
+        self.critic.train();
 
         transition = self.ram.sample(BATCH_SIZE)
-        batch_data = DK_ReinforcementLearning.Transition(*zip(*transition));
+        batch_data = DKRL.ContinuousSpace.Transition(*zip(*transition));
 
         # s1=batch_data.state
         # a1=batch_data.action
@@ -214,6 +202,9 @@ class Trainer:
         self.actor_optimizer.step();
         #============ optimize actor ===================
 
+        self.actor.eval();
+        self.critic.eval();
+
         TAU = 0.001;
         soft_update(self.target_actor,self.actor,TAU);
         soft_update(self.target_critic,self.critic,TAU);
@@ -237,7 +228,7 @@ print(' State Dimensions :- ', S_DIM)
 print(' Action Dimensions :- ', A_DIM)
 print(' Action Max :- ', A_MAX)
 
-memory=DK_ReinforcementLearning.ReplayMemory(MAX_BUF);
+memory=DKRL.ContinuousSpace.ReplayMemory(MAX_BUF);
 
 trainer=Trainer(S_DIM,A_DIM,A_MAX,memory);
 

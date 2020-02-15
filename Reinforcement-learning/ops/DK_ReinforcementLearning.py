@@ -1,7 +1,7 @@
 import sys
 sys.path.append("..")
 import ops.DK_RL_DiscreteSpace as DiscreteSpace
-
+import ops.DK_RL_ContinuousSpace as ContinuousSpace
 
 
 class GAME():
@@ -22,13 +22,7 @@ class GAME():
     def reset(self):
         self.env.reset();
         image_shape = self.get_screen().shape;
-        
-        if self.game_name == 'Pendulum-v0':
-            self.max_key_num = 1;
-        else:
-            self.max_key_num = self.env.action_space.n;
-            
-            
+        self.max_key_num = self.env.action_space.shape
         self.image_height = image_shape[0];
         self.image_width = image_shape[1];
         self.image_channel = image_shape[2];
