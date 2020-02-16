@@ -75,8 +75,8 @@ class Critic_Model(torch.nn.Module):
 
         output = self.fc4(sa);
         return output;
-
 game=DKRL.GAME('Pendulum-v0');
+
 game.env._max_episode_steps=10001;
 game.env.seed(1); 
 
@@ -96,7 +96,7 @@ Critic_net=Critic_Model(state_dim=state_dim,action_dim=action_dim);
 target_Critic_net=Critic_Model(state_dim=state_dim,action_dim=action_dim);
 
 
-RL = DKRL.ContinuousSpace.DDPG_Module(  actor_net=Actor_net,
+RL = DKRL.ContinuousSpace.DDPG_ICM_Module(  actor_net=Actor_net,
                                         target_actor_net=target_Actor_net,
                                         critic_net=Critic_net,
                                         target_critic_net=target_Critic_net,

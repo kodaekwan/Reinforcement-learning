@@ -63,7 +63,7 @@ class Critic(torch.nn.Module):
         x=self.ac2(x);
         return self.classifier(x);
 
-game=DKRL.GAME();
+game=DKRL.GAME('CartPole-v0');
 game.env._max_episode_steps=10001;
 game.env.seed(1); 
 
