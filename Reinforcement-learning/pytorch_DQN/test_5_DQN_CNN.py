@@ -114,17 +114,13 @@ for episode in range(1000):
         # image transform
         now_screen=game.focus_cut_image(src=now_screen,focus=image_focus,width=image_cut_width,height=image_cut_height);
         now_screen=game.resize_image(now_screen,90,40);# get now state for image
-        
         different_screen = now_screen-privous_screen;#calculate different screen
         float_dsc=np.array(different_screen,dtype=np.float32)/255.0;# RGB image(0~255) -> RGB image(0.0~1.0)
+        next_state = float_dsc.transpose((2,0,1));# (Height, Width, Channel)->(Channel, Height, Width)
 
-        if not done:
-            next_state = float_dsc.transpose((2,0,1));# (Height, Width, Channel)->(Channel, Height, Width)
-        else:
-            next_state = None;
-
+        
         # stack results to memory
-        RL.stack_memory(now_state,action,next_state,reward);
+        RL.stack_image_memory(now_state,action,next_state,reward);
         
         # change from now data to previous data by time flow.
         now_state = next_state;

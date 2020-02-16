@@ -63,7 +63,6 @@ for episode in range(1000):
     observation = game.env.state;
     now_state = observation;
     score = 0
-
     for t  in range(1000):
 
         # Decide action from policy network
@@ -73,19 +72,14 @@ for episode in range(1000):
         observation,reward,done,info = game.set_control(action);
         # observation shape => [cart-position ,cart-velocity, pole-position, pole-velocity]
 
-        reward = reward if not done or score >= 499 else -100.0
+        reward = reward if not done or score > 499 else -100.0
         score += reward
 
         # !!view current image but not using to train!!
         if episode%50==0:
             now_screen = game.get_screen();
 
-        if not done:
-            next_state = observation;
-        else:
-            next_state = None;
-
-        # stack results to memory
+        next_state = observation;
         RL.stack_memory(now_state,action,next_state,reward);
         
         # change from now data to previous data by time flow.

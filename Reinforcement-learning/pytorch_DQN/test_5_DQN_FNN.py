@@ -83,11 +83,7 @@ for episode in range(1000):
         if episode%50==0:
             now_screen = game.get_screen();
 
-        if not done:
-            next_state = observation;
-        else:
-            next_state = None;
-
+        next_state = observation;
         # stack results to memory
         RL.stack_memory(now_state,action,next_state,reward);
         

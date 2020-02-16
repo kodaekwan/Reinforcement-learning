@@ -565,15 +565,33 @@ class DQN_Module():
             return random.randrange(action_num);
     
     def stack_memory(self,state=None,action=None,next_state=None,reward=None):
-        # "state" type numpy array
-        # "action" type int
-        # "next_state" type numpy array
-        # "reward" type flot or int
-        self.memory.push(   torch.from_numpy(state).float().unsqueeze(0).to(self.buffer_device),
-                            torch.from_numpy(np.array([[action]])).to(self.buffer_device),
-                            next_state if next_state is None else torch.from_numpy(next_state).float().unsqueeze(0).to(self.buffer_device),
-                            torch.from_numpy(np.array([[reward]])).float().to(self.buffer_device));
+        # "state" type numpy
+        # "action" numpy int # discrete space
+        # "next_state" type numpy
+        # "reward" type numpy flot or int
+        if (state is None) or (action is None) or (next_state is None) or (reward is None):
+            return;
+        
+        self.memory.push(   torch.from_numpy(np.array(state)).float().view(1,-1).to(self.buffer_device),
+                            torch.from_numpy(np.array(action)).view(1,-1).to(self.buffer_device),  
+                            torch.from_numpy(np.array(next_state)).float().view(1,-1).to(self.buffer_device),
+                            torch.from_numpy(np.array(reward)).float().view(1,-1).to(self.buffer_device));
     
+    def stack_image_memory(self,image_state=None,action=None,next_image_state=None,reward=None):
+        # "image_state" type numpy image CHW
+        # "action" numpy int # discrete space
+        # "next_image_state" type numpy image CHW
+        # "reward" type numpy flot or int
+        if (image_state is None) or (action is None) or (next_image_state is None) or (reward is None):
+            return;
+        
+        C,H,W = image_state.shape;
+
+        self.memory.push(   torch.from_numpy(np.array(image_state)).view(1,C,H,W).float().to(self.buffer_device),
+                            torch.from_numpy(np.array(action)).view(1,-1).to(self.buffer_device),  
+                            torch.from_numpy(np.array(next_image_state)).view(1,C,H,W).float().to(self.buffer_device),
+                            torch.from_numpy(np.array(reward)).view(1,-1).float().to(self.buffer_device));
+
     def target_update(self):
         hard_update(self.target_net,self.policy_net);
     
@@ -591,29 +609,28 @@ class DQN_Module():
         transition = self.memory.sample(self.batch_size);
         batch_data = Transition(*zip(*transition));
         # last data dropout
-        non_final_mask = torch.tensor(  tuple(map(lambda s: s is not None, batch_data.next_state))
-                                        ,device=self.device
-                                        ,dtype=torch.bool);
-        non_final_next_state = torch.cat([s for s in batch_data.next_state if s is not None]).to(self.device);
+        batch_data = Transition(*zip(*self.memory.sample(self.batch_size)));
 
-        state_batch = torch.cat(batch_data.state).to(self.device);
-        action_batch = torch.cat(batch_data.action).to(self.device);
-        reward_batch = torch.cat(batch_data.reward).to(self.device);
+        state=torch.cat(batch_data.state).to(self.device);
+        action=torch.cat(batch_data.action).to(self.device);
+        reward=torch.cat(batch_data.reward).to(self.device);
+        next_state=torch.cat(batch_data.next_state).to(self.device);
 
-        state_action_values = self.policy_net(state_batch).gather(1,action_batch);
+        # ========================== DQN ======================================
+        # ****  a' of origin DQN is result of past Qp ****
+        # DQN loss = reward + gamma*Qt(s',a') - Qp(s,a);
         
-        # gather() parsing the result according to action_batch.
-        # example) a=[[1,2],[3,4],[5,6]],b=[1,0,1] => a.gather(1,b) = [2,3,6]
+        y_predicted = self.policy_net(state).gather(1,action);
+        #                       ^ Qp(s,a);
+                
+        next_next_state = self.target_net(next_state).max(1)[0].detach().unsqueeze(1);
+        #                       ^ Qt(s',a');
         
-        next_state_values = torch.zeros(self.batch_size,device=self.device);
-        next_state_values[non_final_mask]  = self.target_net(non_final_next_state).max(1)[0].detach();# target_net decide next state. In order to separated update, you detach the result.
-        
-        expected_state_action_values = reward_batch.squeeze()+(GAMMA*next_state_values);
+        y_expected = reward+(GAMMA*next_next_state);
+        #             ^  reward + gamma*Qt(s',a')
 
-        
-        loss = self.criterion(state_action_values.squeeze(),expected_state_action_values);
-        # loss = reward + gamma*Qt(s',a') - Qp(s,a);
-        
+        loss = self.criterion(y_predicted,y_expected);
+        # ========================== DQN ======================================
         self.optimizer.zero_grad();
         loss.backward();
 
@@ -688,18 +705,37 @@ class DDQN_Module():
             return random.randrange(action_num);
     
     def stack_memory(self,state=None,action=None,next_state=None,reward=None):
-        # "state" type numpy array
-        # "action" type int
-        # "next_state" type numpy array
-        # "reward" type flot or int
+        # "state" type numpy
+        # "action" numpy int # discrete space
+        # "next_state" type numpy
+        # "reward" type numpy flot or int
+        if (state is None) or (action is None) or (next_state is None) or (reward is None):
+            return;
+        
+        self.memory.push(   torch.from_numpy(np.array(state)).float().view(1,-1).to(self.buffer_device),
+                            torch.from_numpy(np.array(action)).view(1,-1).to(self.buffer_device),  
+                            torch.from_numpy(np.array(next_state)).float().view(1,-1).to(self.buffer_device),
+                            torch.from_numpy(np.array(reward)).float().view(1,-1).to(self.buffer_device));
+    
+    def stack_image_memory(self,image_state=None,action=None,next_image_state=None,reward=None):
+        # "image_state" type numpy
+        # "action" numpy int # discrete space
+        # "next_image_state" type numpy
+        # "reward" type numpy flot or int
+        if (image_state is None) or (action is None) or (next_image_state is None) or (reward is None):
+            return;
+        
+        C,H,W = image_state.shape;
 
-        self.memory.push(   torch.from_numpy(state).float().unsqueeze(0).to(self.buffer_device),
-                            torch.from_numpy(np.array([[action]])).to(self.buffer_device),
-                            next_state if next_state is None else torch.from_numpy(next_state).float().unsqueeze(0).to(self.buffer_device),
-                            torch.from_numpy(np.array([[reward]])).float().to(self.buffer_device));
+        self.memory.push(   torch.from_numpy(np.array(image_state)).view(1,C,H,W).float().to(self.buffer_device),
+                            torch.from_numpy(np.array(action)).view(1,-1).to(self.buffer_device),  
+                            torch.from_numpy(np.array(next_image_state)).view(1,C,H,W).float().to(self.buffer_device),
+                            torch.from_numpy(np.array(reward)).view(1,-1).float().to(self.buffer_device));
+
                             
     def target_update(self):
         hard_update(self.target_net,self.policy_net);#copied weight of policy_net to target net.
+        #self.target_net.load_state_dict(self.policy_net.state_dict());
 
     def update(self,GAMMA=0.999,parameter_clamp=None):
         # "parameter_clamp" example) parameter_clamp=(-1,1)
@@ -711,21 +747,14 @@ class DDQN_Module():
         # if memory size over self.batch_size then train network model.
         self.policy_net.train();#
         # get batch data
-        transition = self.memory.sample(self.batch_size);
-        batch_data = Transition(*zip(*transition));
-        # last data dropout
-        non_final_mask = torch.tensor(  tuple(map(lambda s: s is not None, batch_data.next_state))
-                                        ,device=self.device
-                                        ,dtype=torch.bool);
-        non_final_next_state = torch.cat([s for s in batch_data.next_state if s is not None]).to(self.device);
+        batch_data = Transition(*zip(*self.memory.sample(self.batch_size)));
 
-        state_batch = torch.cat(batch_data.state).to(self.device);
-        action_batch = torch.cat(batch_data.action).to(self.device);
-        reward_batch = torch.cat(batch_data.reward).to(self.device);
-
-        state_action_values = self.policy_net(state_batch).gather(1,action_batch);
-        # gather() parsing the result according to action_batch.
-        # example) a=[[1,2],[3,4],[5,6]],b=[1,0,1] => a.gather(1,b) = [2,3,6]
+        state=torch.cat(batch_data.state).to(self.device);
+        action=torch.cat(batch_data.action).to(self.device);
+        reward=torch.cat(batch_data.reward).to(self.device);
+        next_state=torch.cat(batch_data.next_state).to(self.device);
+        
+        
 
         # ========================== Double DQN ======================================
         # reference http://papers.nips.cc/paper/3964-double-q-learning
@@ -734,20 +763,18 @@ class DDQN_Module():
         # Origin DQN:  loss = reward + gamma*Qt(s',a') - Qp(s,a);
         
         # **** a' of Double DQN is result of current Qp ****
-        # Double DQN:  loss = reward + gamma*Qt(s', Qp(s',a') ) - Qp(s,a); 
+        # Double DQN:  loss = reward + gamma*Qt(s', Qp(s',a') ) - Qp(s,a);
         
-        next_state_action_values = self.policy_net(non_final_next_state).max(1)[1].detach();
+        y_predicted = self.policy_net(state).gather(1,action);
+        
+        next_next_action = self.policy_net(next_state).max(1)[1].detach();
         #                   ^ a' = Qp(s',a')
-        
-        next_state_values = torch.zeros(self.batch_size,device=self.device);
-        next_state_values[non_final_mask]  = self.target_net(non_final_next_state).gather(1,next_state_action_values.unsqueeze(1)).detach().squeeze(1);
+        next_next_state = self.target_net(next_state).gather(1,next_next_action.unsqueeze(1)).detach();
         #                                              ^ Qt(s', Qp(s',a') )
-        
-        expected_state_action_values = reward_batch.squeeze()+(GAMMA*next_state_values);
+        y_expected = reward+(GAMMA*next_next_state);
+
+        loss = self.criterion(y_predicted,y_expected);
         # ========================== Double DQN ======================================
-        
-        loss = self.criterion(state_action_values.squeeze(),expected_state_action_values);# "state_action_values" shape is [batch,1] so .squeeze()
-        
         self.optimizer.zero_grad();
         loss.backward();
 

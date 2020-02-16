@@ -82,9 +82,9 @@ class DDPG_Module():
         if (state is None) or (action is None) or (next_state is None) or (reward is None):
             return;
         
-        self.memory.push(   torch.from_numpy(state).float().view(1,-1).to(self.buffer_device),
+        self.memory.push(   torch.from_numpy(np.array(state)).float().view(1,-1).to(self.buffer_device),
                             torch.from_numpy(np.array(action)).float().view(1,-1).to(self.buffer_device),
-                            torch.from_numpy(next_state).float().view(1,-1).to(self.buffer_device),
+                            torch.from_numpy(np.array(next_state)).float().view(1,-1).to(self.buffer_device),
                             torch.from_numpy(np.array(reward)).float().view(1,-1).to(self.buffer_device));
 
     def update(self,GAMMA = 0.99,soft_gain = 0.001):
