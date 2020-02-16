@@ -3,7 +3,8 @@ from ops import ICM
 
 
 class DDPG_ICM_Module():
-    # Deep Deterministic Policy Gradients
+    # Deep Deterministic Policy Gradients with Intrinsic Curiosity Module
+    # Curiosity-driven Exploration by Self-supervised Prediction
     def __init__(   self,
                     actor_net,
                     target_actor_net,
@@ -229,7 +230,7 @@ class DDPG_Module():
     def get_exploitation_action(self,state):
         state = torch.autograd.Variable(torch.from_numpy(state)).to(self.device);
         action = self.target_actor_net.forward(state).detach();
-        return action.item();
+        return action.cpu().numpy();
     
     
     def get_exploration_action(self,state):# add noise
