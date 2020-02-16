@@ -91,7 +91,7 @@ class DDPG_Module():
         
         if(len(self.memory)<(self.batch_size+self.train_start)):
             return;
-            
+
         self.actor_net.train();
         self.critic_net.train();
         
@@ -125,7 +125,7 @@ class DDPG_Module():
 
 
         # ============================== optimize action ========================================
-        #       <DDPG>          DDPG Action loss : -Qtc(s,Qpa(s)) == -Qtc(s,a')
+        #       <DDPG>          DDPG Action loss : -Qpc(s,Qpa(s)) == -Qpc(s,a')
         self.actor_net.zero_grad();
         next_action_p = self.actor_net.forward(state);
         loss_actor = -self.critic_net.forward(state,next_action_p);
