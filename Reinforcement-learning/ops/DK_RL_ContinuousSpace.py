@@ -75,9 +75,9 @@ class DDPG_Module():
         return noise_action;
     
     def stack_memory(self,state=None,action=None,next_state=None,reward=None):
-        # "state" type numpy array
+        # "state" type numpy
         # "action" type numpy
-        # "next_state" type numpy array
+        # "next_state" type numpy
         # "reward" type numpy
         if (state is None) or (action is None) or (next_state is None) or (reward is None):
             return;
