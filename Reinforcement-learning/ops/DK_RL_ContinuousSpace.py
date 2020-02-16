@@ -2,9 +2,6 @@ from ops.DK_util import *
 from ops import ICM
 
 
-
-
-
 class DDPG_ICM_Module():
     # Deep Deterministic Policy Gradients
     def __init__(   self,
