@@ -4,7 +4,7 @@ import sys
 sys.path.append("..")
 import ops.DK_ReinforcementLearning as DKRL
 import gc
-
+import matplotlib.pyplot as plt
 
 class Actor_Model(torch.nn.Module):
 
@@ -110,15 +110,14 @@ RL.set_ActorOptimizer();
 RL.set_CriticOptimizer();
 RL.set_Criterion();
 
-scores = []
-for episode in range(1000):
+train_scores = []
+test_scores = []
+for episode in range(100):
     
     observation = game.env.reset();
     print("EPISODE: ",episode);
     score= 0.;
     for r in range(500):
-        if episode > 100:
-            game.env.render();
        
         state = np.float32(observation);
 
@@ -140,14 +139,36 @@ for episode in range(1000):
         if done:
             break;
     
-    
-    scores.append(score)
-    print("score: ",score);
+   
+
+    train_scores.append(score)
+    print("train score: ",score);
     print("stack memory : ",len(RL.memory));
-    print("=====================")
+    score= 0;
+    
+    observation = game.env.reset();
+    for r in range(500):
+        if episode > 50:
+            game.env.render();
+        state = np.float32(observation);
+        action = RL.get_exploitation_action(state);
+        new_observation,reward,done,info = game.set_control(action);
+        score+=reward;
+        observation = new_observation;
+    print("test score: ",score);
+    print("=====================");
+    test_scores.append(score)
     gc.collect();
 
+plt.title('Pendulum-v0');
+plt.xlabel('Episode');
+plt.ylabel('Score');
+plt.plot(np.array(train_scores));
+plt.plot(np.array(test_scores));
+plt.legend(['train_scores','test_scores'])
+plt.show()
 
+plt.close();
 game.close();
 
 

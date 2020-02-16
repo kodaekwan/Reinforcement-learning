@@ -69,7 +69,7 @@ class DDPG_ICM_Module():
     def get_exploitation_action(self,state):
         state = torch.autograd.Variable(torch.from_numpy(state)).to(self.device);
         action = self.target_actor_net.forward(state).detach();
-        return action.item();
+        return action.cpu().numpy();
     
     
     def get_exploration_action(self,state):# add noise
