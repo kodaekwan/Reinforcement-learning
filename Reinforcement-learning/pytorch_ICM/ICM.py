@@ -2,10 +2,10 @@ import torch
 
 
 class Fowrard_Model(torch.nn.Module):
-    def __init__(self,action_dim,pi_dim,output_dim):
+    def __init__(self,action_dim,phi_dim,output_dim):
         super(Fowrard_Model,self).__init__();
 
-        self.fc1 = torch.nn.Linear(pi_dim,256);
+        self.fc1 = torch.nn.Linear(phi_dim,256);
         self.ac1 = torch.nn.ReLU();
 
         self.fc2 = torch.nn.Linear(action_dim,256);
@@ -16,10 +16,10 @@ class Fowrard_Model(torch.nn.Module):
 
         self.fc4 = torch.nn.Linear(512,output_dim);
 
-    def forward(self,action,pi):
+    def forward(self,action,phi):
 
         x1 =    self.ac1(
-                self.fc1(pi));
+                self.fc1(phi));
         
         x2 =    self.ac2(
                 self.fc2(action));
@@ -32,13 +32,13 @@ class Fowrard_Model(torch.nn.Module):
 
 
 class Inverse_Model(torch.nn.Module):
-    def __init__(self,pi_dim,action_dim):
+    def __init__(self,phi_dim,action_dim):
         super(Inverse_Model,self).__init__();
 
-        self.fc1 = torch.nn.Linear(pi_dim,128);
+        self.fc1 = torch.nn.Linear(phi_dim,128);
         self.ac1 = torch.nn.ReLU();
 
-        self.fc2 = torch.nn.Linear(pi_dim,128);
+        self.fc2 = torch.nn.Linear(phi_dim,128);
         self.ac2 = torch.nn.ReLU();
 
         self.fc3 = torch.nn.Linear(128*2,256);
@@ -46,11 +46,11 @@ class Inverse_Model(torch.nn.Module):
 
         self.fc4 = torch.nn.Linear(256,action_dim);
 
-    def forward(self,pi,next_pi):
+    def forward(self,phi,next_phi):
 
-        x1=self.ac1(self.fc1(pi));
+        x1=self.ac1(self.fc1(phi));
 
-        x2=self.ac2(self.fc2(next_pi));
+        x2=self.ac2(self.fc2(next_phi));
 
         concat_feature = torch.cat((x1,x2),-1);
 
@@ -61,62 +61,62 @@ class Inverse_Model(torch.nn.Module):
 
 
 class ICM_Model(torch.nn.Module):
-    def __init__(self,state_dim,action_dim,pi_dim = 128):
+    def __init__(self,state_dim,action_dim,phi_dim = 128):
         super(ICM_Model,self).__init__();
         
         
         #==================== state module ====================
         self.state_fc1 = torch.nn.Linear(state_dim,128);
         self.state_ac1 = torch.nn.ReLU();
-        self.state_fc2 = torch.nn.Linear(128,pi_dim);
+        self.state_fc2 = torch.nn.Linear(128,phi_dim);
         self.state_ac2 = torch.nn.ReLU();
         #==================== state module ====================
 
         self.forward_model=Fowrard_Model(   action_dim=action_dim,
-                                            pi_dim=pi_dim,
-                                            output_dim=pi_dim);
+                                            phi_dim=phi_dim,
+                                            output_dim=phi_dim);
 
-        self.inverse_model=Inverse_Model(   pi_dim=pi_dim,
+        self.inverse_model=Inverse_Model(   phi_dim=phi_dim,
                                             action_dim=action_dim);
         
-        self.pi_loss = torch.nn.MSELoss(reduction='none');
+        self.intrinsic_reward_distance = torch.nn.MSELoss(reduction='none');
 
         self.inverse_loss = torch.nn.SmoothL1Loss();
         self.forward_loss = torch.nn.MSELoss();
 
     def forward(self,state,next_state,action):
 
-        pi =        self.state_ac2(
+        phi =       self.state_ac2(
                     self.state_fc2(
                     self.state_ac1(
                     self.state_fc1(state))));
         
-        next_pi =   self.state_ac2(
+        next_phi =  self.state_ac2(
                     self.state_fc2(
                     self.state_ac1(
                     self.state_fc1(next_state))));
         
-        predic_action = self.inverse_model(pi,next_pi);
-        predic_next_pi = self.forward_model(action,pi);
+        predic_action = self.inverse_model(phi,next_phi);
+        predic_next_phi = self.forward_model(action,phi);
 
-        return next_pi,predic_next_pi,predic_action;
+        return next_phi,predic_next_phi,predic_action;
     
-    def get_intrinsic_reward_numpy(self,next_pi,predic_next_pi,eta=0.01):
+    def get_intrinsic_reward_numpy(self,next_phi,predic_next_phi,eta=0.01):
         # eta is scaling factor
-        intrinsic_reward = eta * self.pi_loss(next_pi,predic_next_pi).mean(-1)
+        intrinsic_reward = eta * self.intrinsic_reward_distance(next_phi,predic_next_phi).mean(-1)
         return intrinsic_reward.data.cpu().numpy();
     
-    def get_intrinsic_reward(self,next_pi,predic_next_pi,eta=0.01):
+    def get_intrinsic_reward(self,next_phi,predic_next_phi,eta=0.01):
         # eta is scaling factor
-        intrinsic_reward = eta * self.pi_loss(next_pi,predic_next_pi).mean(-1)
+        intrinsic_reward = eta * self.intrinsic_reward_distance(next_phi,predic_next_phi).mean(-1)
         return intrinsic_reward;
 
-    def get_inverse_loss(self,predic_action,real_action):
-        loss=self.inverse_loss(predic_action,real_action);
+    def get_inverse_loss(self,predic_action,action):
+        loss=self.inverse_loss(predic_action,action);
         return loss;
 
-    def get_forward_loss(self,predic_next_pi,next_pi):
-        return self.forward_loss(predic_next_pi,next_pi);
+    def get_forward_loss(self,predic_next_phi,next_phi):
+        return self.forward_loss(predic_next_phi,next_phi);
 
 
 #reference code:  https://github.com/jcwleo/curiosity-driven-exploration-pytorch/blob/e8448777325493dd86f2c4164e7188882fc268ea/model.py#L148
