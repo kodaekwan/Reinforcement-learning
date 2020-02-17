@@ -143,7 +143,7 @@ for episode in range(100):
         
         observation = new_observation;
 
-        RL.update(icm_beta=0.1);
+        RL.update();
         if done:
             break;
     
