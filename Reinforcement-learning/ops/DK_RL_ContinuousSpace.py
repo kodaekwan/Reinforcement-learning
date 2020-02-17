@@ -1,5 +1,4 @@
 from ops.DK_util import *
-from ops import ICM
 
 
 class DDPG_ICM_Module():
@@ -10,6 +9,7 @@ class DDPG_ICM_Module():
                     target_actor_net,
                     critic_net,
                     target_critic_net,
+                    icm_net,
                     device=None,
                     batch_size=128,
                     train_start=0):
@@ -19,7 +19,7 @@ class DDPG_ICM_Module():
         else:
             self.device=device;
         
-        self.icm = ICM.ICM_Model(state_dim=3,action_dim=1).to(self.device);
+        
 
         self.batch_size = batch_size;
         self.train_start =train_start;
@@ -28,6 +28,10 @@ class DDPG_ICM_Module():
         self.critic_net=critic_net.to(self.device);
         self.target_critic_net=target_critic_net.to(self.device);
         
+        self.icm = icm_net.to(self.device);
+        
+        
+        self.icm.eval();
         self.actor_net.eval();
         self.target_actor_net.eval();
         self.critic_net.eval();
@@ -67,11 +71,28 @@ class DDPG_ICM_Module():
         else:
             self.criterion = criterion.to(self.device);
 
+    def set_ICM_Foward_Criterion(self,criterion=None):    
+        if(criterion==None):
+            self.foward_criterion = torch.nn.MSELoss().to(self.device);
+        else:
+            self.foward_criterion = criterion.to(self.device);
+    
+    def set_ICM_Inverse_Criterion(self,criterion=None):    
+        if(criterion==None):
+            self.inverse_criterion = torch.nn.SmoothL1Loss().to(self.device);
+        else:
+            self.inverse_criterion = criterion.to(self.device);
+    
+    def set_ICM_intrinsic_reward_distance(self,distance = None):
+        if(distance==None):
+            self.intrinsic_reward_distance = torch.nn.MSELoss(reduction='none').to(self.device);
+        else:
+            self.intrinsic_reward_distance = distance
+
     def get_exploitation_action(self,state):
         state = torch.autograd.Variable(torch.from_numpy(state)).to(self.device);
         action = self.target_actor_net.forward(state).detach();
         return action.cpu().numpy();
-    
     
     def get_exploration_action(self,state):# add noise
         state = torch.autograd.Variable(torch.from_numpy(state)).to(self.device);
@@ -79,7 +100,7 @@ class DDPG_ICM_Module():
         noise_action = action.item() + (self.noise.sample()*self.action_limit);
         return noise_action;
     
-    def stack_memory(self,state=None,action=None,next_state=None,reward=None):
+    def stack_memory(self,state,action,next_state,reward):
         # "state" type numpy
         # "action" type numpy
         # "next_state" type numpy
@@ -92,13 +113,14 @@ class DDPG_ICM_Module():
                             torch.from_numpy(np.array(next_state)).float().view(1,-1).to(self.buffer_device),
                             torch.from_numpy(np.array(reward)).float().view(1,-1).to(self.buffer_device));
 
-    def update(self,GAMMA = 0.99,soft_gain = 0.001):
+    def update(self,GAMMA = 0.99,soft_gain = 0.001,icm_beta = 0.5,icm_eta=0.01):
         
         if(len(self.memory)<(self.batch_size+self.train_start)):
             return;
 
         self.actor_net.train();
         self.critic_net.train();
+        self.icm.train();
         
         batch_data = Transition(*zip(*self.memory.sample(self.batch_size)));
 
@@ -107,15 +129,24 @@ class DDPG_ICM_Module():
         reward=torch.cat(batch_data.reward).to(self.device);
         next_state=torch.cat(batch_data.next_state).to(self.device);
 
-
-        # ============================== optimize icm ========================================
-        beta = 0.5
-        next_pi,predic_next_pi,predic_action = self.icm.forward(state,next_state,action);
-        inverse_loss = self.icm.get_inverse_loss(predic_action,action);
-        forward_loss = self.icm.get_forward_loss(predic_next_pi,next_pi.detach());
+        # ============================== calculate icm ========================================
+        # Curiosity-driven Exploration by Self-supervised Prediction
+        # https://arxiv.org/pdf/1705.05363.pdf
+        
+        next_phi,predic_next_phi,predic_action=self.icm.forward(state,next_state,action);
+        # Inverse loss   
+        # discrete space = cross_entropy( log(ˆat)-log(at))
+        # *(don't defined in the paper) continuous space = L1( ˆat - at) <= Inverse model predict the action.In the formula, cross entropy and MSE same intrinsic. but MSE is slow converge according to small value. so used L1 distance Reconstruction.
+        inverse_loss = self.inverse_criterion(predic_action,action);
+        
+        # Forward loss = L2‖ˆφ(st+1)−φ(st+1)‖
+        forward_loss = self.foward_criterion(predic_next_phi,next_phi.detach());
+        
+        # intrinsic reward signal = IR
+        # IR = eta*L2‖ˆφ(st+1)−φ(st+1)‖
         with torch.no_grad():
-            intrinsic_reward = self.icm.get_intrinsic_reward(next_pi,predic_next_pi,eta=0.01).unsqueeze(1);
-        # ============================== optimize icm ========================================
+            intrinsic_reward = icm_eta * self.intrinsic_reward_distance(next_phi,predic_next_phi).mean(-1).unsqueeze(1);
+        # ============================== calculate icm ========================================
         
         # ============================== optimize critic ========================================
         #       <double DQN>    Double DQN loss : reward + gamma*Qt(s', Qp(s',a') ) - Qp(s,a);
@@ -132,7 +163,9 @@ class DDPG_ICM_Module():
         y_expected  = (reward+intrinsic_reward) + (GAMMA*next_val);# r + gamma*Qt'( s', Qp(s',a'))
         y_predicted = self.critic_net.forward(state,action); # Qp(s,a);
         loss_critic = self.criterion(y_predicted,y_expected);# r+gamma*Qt(s',a')-Qp(s,a);
-        loss_critic += (((1.0-beta)*inverse_loss)+(beta*forward_loss));
+        
+        loss_critic += (((1.0-icm_beta)*inverse_loss)+(icm_beta*forward_loss));
+
         self.critic_optimizer.zero_grad();
         loss_critic.backward();
         self.critic_optimizer.step();
@@ -154,6 +187,7 @@ class DDPG_ICM_Module():
         # ============================== optimize action ========================================
         self.actor_net.eval();
         self.critic_net.eval();
+        self.icm.eval();
         
         soft_update(self.target_actor_net,self.actor_net,soft_gain);
         soft_update(self.target_critic_net,self.critic_net,soft_gain);

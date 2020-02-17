@@ -61,9 +61,9 @@ class Inverse_Model(torch.nn.Module):
 
 
 class ICM_Model(torch.nn.Module):
-    def __init__(self,state_dim,action_dim):
+    def __init__(self,state_dim,action_dim,pi_dim = 128):
         super(ICM_Model,self).__init__();
-        pi_dim = 128;
+        
         
         #==================== state module ====================
         self.state_fc1 = torch.nn.Linear(state_dim,128);

@@ -5,7 +5,7 @@ sys.path.append("..")
 import ops.DK_ReinforcementLearning as DKRL
 import gc
 import matplotlib.pyplot as plt
-
+import ICM
 class Actor_Model(torch.nn.Module):
 
     def __init__(self,state_dim,action_dim,output_std=1.0,EPS = 0.003):
@@ -95,20 +95,28 @@ target_Actor_net=Actor_Model(state_dim=state_dim,action_dim=action_dim,output_st
 Critic_net=Critic_Model(state_dim=state_dim,action_dim=action_dim);
 target_Critic_net=Critic_Model(state_dim=state_dim,action_dim=action_dim);
 
+icm_net = ICM.ICM_Model(state_dim=state_dim,action_dim=action_dim);
 
 RL = DKRL.ContinuousSpace.DDPG_ICM_Module(  actor_net=Actor_net,
-                                        target_actor_net=target_Actor_net,
-                                        critic_net=Critic_net,
-                                        target_critic_net=target_Critic_net,
-                                        device=device,
-                                        batch_size=128,
-                                        train_start=0);
+                                            target_actor_net=target_Actor_net,
+                                            critic_net=Critic_net,
+                                            target_critic_net=target_Critic_net,
+                                            icm_net=icm_net,
+                                            device=device,
+                                            batch_size=128,
+                                            train_start=0);
 
 RL.set_Noise(action_dim=action_dim,action_limit=action_std);
 RL.set_Memory(capacity=6000000,buffer_device=torch.device("cuda:0"));
 RL.set_ActorOptimizer();
 RL.set_CriticOptimizer();
 RL.set_Criterion();
+
+# =============== ICM setting===============
+RL.set_ICM_Foward_Criterion();
+RL.set_ICM_Inverse_Criterion();
+RL.set_ICM_intrinsic_reward_distance();
+# =============== ICM setting===============
 
 train_scores = []
 test_scores = []
@@ -135,7 +143,7 @@ for episode in range(100):
         
         observation = new_observation;
 
-        RL.update();
+        RL.update(icm_beta=0.1);
         if done:
             break;
     
@@ -148,7 +156,7 @@ for episode in range(100):
     
     observation = game.env.reset();
     for r in range(500):
-        if episode > 50:
+        if episode > 95:
             game.env.render();
         state = np.float32(observation);
         action = RL.get_exploitation_action(state);
