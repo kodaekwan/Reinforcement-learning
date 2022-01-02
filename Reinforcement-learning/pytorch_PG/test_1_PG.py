@@ -2,7 +2,8 @@ import time
 import numpy as np
 import torch
 import sys
-sys.path.append("..")
+import os
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 import ops.DK_ReinforcementLearning as DKRL
 
 torch.manual_seed(1);
