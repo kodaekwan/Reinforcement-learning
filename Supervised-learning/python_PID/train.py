@@ -156,8 +156,8 @@ plt.plot(pid_tor,label='PID-output');
 plt.legend(loc='best')
 plt.savefig("Supervised-learning/python_PID/result.png")  
 plt.show();
-ML_loss = np.mean(np.abs(np.array(test_ref)-np.array(test_tar)))
-PID_loss = np.mean(np.abs(np.array(pid_ref)-np.array(pid_tar)))
+ML_loss = np.mean(np.abs(np.array(test_ref)-np.array(test_tar))[100:])
+PID_loss = np.mean(np.abs(np.array(pid_ref)-np.array(pid_tar))[100:])
 
 print("ML loss: "+str(ML_loss)+", PID loss : "+str(PID_loss));
 
