@@ -128,3 +128,6 @@ for eps in range(10):
 
             
 env.close();
+
+# reference paper : On Replacing PID Controller with Deep Learning Controller for DC Motor System 
+# DOI:10.12720/joace.3.6.452-456
