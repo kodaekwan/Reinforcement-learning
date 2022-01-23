@@ -1,7 +1,8 @@
 import torch
 import numpy as np
 import sys
-sys.path.append("..")
+import os
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 import ops.DK_ReinforcementLearning as DKRL
 import gc
 import matplotlib.pyplot as plt
@@ -75,7 +76,7 @@ class Critic_Model(torch.nn.Module):
 
         output = self.fc4(sa);
         return output;
-game=DKRL.GAME('Pendulum-v0');
+game=DKRL.GAME('Pendulum-v1');
 
 game.env._max_episode_steps=10001;
 game.env.seed(1); 
@@ -105,7 +106,7 @@ RL = DKRL.ContinuousSpace.DDPG_Module(  actor_net=Actor_net,
                                         train_start=0);
 
 RL.set_Noise(action_dim=action_dim,action_limit=action_std);
-RL.set_Memory(capacity=6000000,buffer_device=torch.device("cuda:0"));
+RL.set_Memory(capacity=6000000,buffer_device=torch.device("cuda" if torch.cuda.is_available() else "cpu"));
 RL.set_ActorOptimizer();
 RL.set_CriticOptimizer();
 RL.set_Criterion();
@@ -160,7 +161,7 @@ for episode in range(100):
     test_scores.append(score)
     gc.collect();
 
-plt.title('Pendulum-v0');
+plt.title('Pendulum-v1');
 plt.xlabel('Episode');
 plt.ylabel('Score');
 plt.plot(np.array(train_scores));

@@ -5,6 +5,7 @@ import controller
 import torch
 import traindatacollector
 from matplotlib import pyplot as plt
+from celluloid import Camera
 
 env = gym.make('Pendulum-v1',g=0.0)
 env.seed(1); 
@@ -92,6 +93,9 @@ pid_ref = [];
 pid_tar = [];
 pid_tor = [];
 
+ML_video=[];
+PID_video=[];
+
 model.eval();
 for eps in range(1):
     
@@ -102,11 +106,14 @@ for eps in range(1):
     Hz = 0.5;
     dt = 0.05;
     state = env.reset();
+    
     print("!!!ML Test!!! => Target : "+"DC");
     for time in range(500):
         target = 45 if (np.sin(Hz*time*dt)>0.0) else -45;# 0 deg
         # show Pendulum
-        env.render();
+        #env.render();
+        ML_video.append(env.render(mode='rgb_array'));
+
         theta,thetadot  = convertState(state);
         refer_angle = np.rad2deg(theta);
 
@@ -123,14 +130,16 @@ for eps in range(1):
         test_ref.append(refer_angle);
         test_tar.append(target);
         test_tor.append(action);
-    
-    print("!!!PID Test!!! => Target : "+"DC");
+
+
     pid.reset();
     state = env.reset();
     for time in range(500):
         target = 45 if (np.sin(Hz*time*dt)>0.0) else -45;# 0 deg
         # show Pendulum
-        env.render();
+        PID_video.append(env.render(mode='rgb_array'));
+        
+
         theta,thetadot  = convertState(state);
         refer_angle = np.rad2deg(theta);
 
@@ -140,6 +149,22 @@ for eps in range(1):
         pid_ref.append(refer_angle);
         pid_tar.append(target);
         pid_tor.append(action);
+
+
+# Result Show & Save
+fig, (ax1, ax2) = plt.subplots(1, 2);
+plt.suptitle('ML vs PID',fontsize=20)
+ax1.set_title("ML")
+ax2.set_title("PID")
+camera = Camera(fig)
+for time_ in range(500):
+    ax1.imshow(ML_video[time_]);
+    ax2.imshow(PID_video[time_]);
+    camera.snap();
+
+animation = camera.animate(interval=50, blit=True)
+animation.save('Supervised-learning/python_PID_ML_imp/ML_PID.gif')
+plt.close();
 
 plt.subplot(5,1,1);
 plt.title('ML')
